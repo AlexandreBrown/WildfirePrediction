@@ -1,0 +1,6 @@
+matplotlib
+GDAL
+requests
+geopandas
+shapely
+numpy
