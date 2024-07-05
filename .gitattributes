@@ -1,1 +1,3 @@
-*.ipynb filter=strip-notebook-output  
+*.ipynb filter=nbstripout
+*.zpln filter=nbstripout
+*.ipynb diff=ipynb
