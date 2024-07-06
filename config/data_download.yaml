@@ -1,0 +1,27 @@
+products_layers: 
+  - MOD13Q1.061:
+      - _250m_16_days_NDVI
+      - _250m_16_days_EVI
+  - MOD44B.061:
+      - Percent_NonVegetated
+      - Percent_NonTree_Vegetation
+      - Percent_Tree_Cover
+  - MOD44W.061:
+      - water_mask
+  - MOD15A2H.061:
+      - Lai_500m
+  - MOD11A2.061:
+      - LST_Day_1km
+      - LST_Night_1km
+  - MOD14A2.061:
+      - FireMask
+  - MOD16A3GF.061:
+      - ET_500m
+  - DAYMET.004:
+      - dayl
+      - prcp
+      - tmax
+      - tmin
+      - vp
+  - NASADEM_NC.001:
+      - NASADEM_HGT
