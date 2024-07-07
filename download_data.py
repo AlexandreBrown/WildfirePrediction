@@ -14,7 +14,7 @@ def main(cfg : DictConfig) -> None:
     
     nasa_earth_data_api.load_products()
     
-    products_layers = cfg.products_layers
+    products_layers = cfg.sources.nasa_earth_data.products_layers
     
     for product in products_layers:
         product_name_and_version = list(product.keys())[0]
