@@ -1,7 +1,9 @@
 import requests
+import calendar
 import pandas as pd
 import geopandas as gpd
 import json
+from pathlib import Path
 from IPython.display import display, HTML
 
 
@@ -83,20 +85,57 @@ class NasaEarthDataApi:
     def load_projections(self) -> dict:
         self.projections = requests.get(f"{self.base_url}spatial/proj").json()
 
+    def submit_tasks(
+        self,
+        tiles: gpd.GeoDataFrame,
+        year_start_inclusive: int,
+        year_end_inclusive: int,
+        month_start_inclusive: int,
+        month_end_inclusive: int,
+        tile_resolution_in_meters: int,
+        tile_length_in_pixels: int
+    ) -> list:
+        self.load_projections()
+        
+        tiles_json = json.loads(tiles.to_json())
+        
+        tasks_responses = []
+  
+        for product_layer in self.get_products_layers():
+            product, layer = product_layer['product'], product_layer['layer']
+            for year in range(year_start_inclusive, year_end_inclusive + 1):
+                for month in range(month_start_inclusive, month_end_inclusive + 1):
+                    task_response = self.submit_task(
+                        year=year,
+                        month=month,
+                        tile_resolution_in_meters=tile_resolution_in_meters,
+                        tile_length_in_pixels=tile_length_in_pixels,
+                        product=product,
+                        layer=layer,
+                        tiles_json=tiles_json
+                    )
+                    tasks_responses.append(task_response)
+                
+        return tasks_responses
+    
     def submit_task(
         self,
-        tiles: gpd.GeoDataFrame, 
-        start_date_mm_dd_yyyy: str, 
-        end_date_mm_dd_yyyy: str,
-        product_layer: dict,
-        task_name: str
-    ) -> dict:
-        self.load_projections()
-        geo_area_json = json.loads(tiles.to_json())
+        year: int,
+        month: int,
+        tile_resolution_in_meters: int,
+        tile_length_in_pixels: int,
+        product: str,
+        layer: str,
+        tiles_json: dict
+    ):
         task_type = "area" # 'area', 'point'
+        task_name = f"canada_{tile_resolution_in_meters}m_{tile_length_in_pixels}px_{product}_{layer}_{year}_{month:02}"  
+        start_date_mm_dd_yyyy = f"{month:02}-01-{year}"
+        end_day = calendar.monthrange(year=year, month=month)[1]
+        end_date_mm_dd_yyyy = f"{month:02}-{end_day:02}-{year}"
+        recurring = False
         output_format = 'netcdf4' # 'netcdf4', 'geotiff'
         output_projection = self.projections['geographic']['Name']
-        recurring = False    
         task = {
             "task_type": task_type,
             "task_name": task_name,
@@ -108,14 +147,14 @@ class NasaEarthDataApi:
                         "recurring": recurring
                     }
                 ],
-                "layers": [product_layer],
+                "layers": [{'product': product, 'layer': layer}],
                 'output': {
                     'format': {
                         'type': output_format
                     },
                     'projection': output_projection
                 },
-                "geo": geo_area_json,
+                "geo": tiles_json,
             }
         }
 
@@ -123,5 +162,3 @@ class NasaEarthDataApi:
         print(f"Status Code: {task_response.status_code} {task_response.reason}")
         task_response_json = task_response.json()
         print(f"Task Response JSON: {task_response_json}")
-        
-        return task_response_json

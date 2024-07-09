@@ -18,8 +18,6 @@ class CanadaBoundaryDataSource:
             for file in self.output_path.iterdir():
                 if file.suffix == ".pdf" or file.suffix == ".html":
                     file.unlink()
-        else:
-            print("Canada boundary shapefile already downloaded, skipping download!")
         
         boundary_shapefile_path = next(self.output_path.glob("./*.shp"))
         return gpd.read_file(boundary_shapefile_path)

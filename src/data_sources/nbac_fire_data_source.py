@@ -22,9 +22,7 @@ class NbacFireDataSource:
             zip.extractall(output_path)
             for file in output_path.iterdir():
                 if file.suffix == ".pdf" or file.suffix == ".html":
-                    file.unlink()   
-        else:
-            print(f"Canada fire polygons already downloaded for year {year}, skipping download!")
+                    file.unlink()
             
         fire_polygons_shapefile_path = next(output_path.glob("./*.shp"))
         fire_polygons = gpd.read_file(fire_polygons_shapefile_path)
