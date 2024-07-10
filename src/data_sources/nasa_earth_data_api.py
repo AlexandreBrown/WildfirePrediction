@@ -116,7 +116,7 @@ class NasaEarthDataApi:
         else:
             timestamp = time.strftime("%Y%m%d-%H%M%S")
             self.logs_folder_path = Path(f"logs/download_data/{timestamp}")
-            logs_folder_path.mkdir(parents=True, exist_ok=True)
+            self.logs_folder_path.mkdir(parents=True, exist_ok=True)
             tasks_hash = {}
             tasks_info = []
   
@@ -268,8 +268,8 @@ class NasaEarthDataApi:
         
         for task_info in tasks_info:
             task_id = task_info['task_id']
-            product = task_info['product']
-            layer = task_info['layer']
+            product = task_info['product'].replace(".", "_").replace(" ", "_").replace("__","_")
+            layer = task_info['layer'].replace(".", "_").replace(" ", "_").replace("__","_")
             year = task_info['year']
             month = task_info['month']
             task_hash = task_info['task_hash']
@@ -293,5 +293,3 @@ class NasaEarthDataApi:
                 with open(filepath, 'wb') as f:                                                                  # Write file to dest dir
                     for data in dl.iter_content(chunk_size=8192): 
                         f.write(data) 
-            
-        
