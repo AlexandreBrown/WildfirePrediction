@@ -110,15 +110,15 @@ class NasaEarthDataApi:
             print(f"Resuming tasks from log folder {str(logs_folder_path)}...")
             self.logs_folder_path = Path(logs_folder_path)
             with open(self.logs_folder_path / self.earth_data_tasks_info_file_name, 'w') as f:
-                tasks_info = json.load(f)
+                self.tasks_info = json.load(f)
             
-            tasks_hash = {t['task_hash']: True for t in tasks_info}
+            tasks_hash = {t['task_hash']: True for t in self.tasks_info}
         else:
             timestamp = time.strftime("%Y%m%d-%H%M%S")
             self.logs_folder_path = Path(f"logs/download_data/{timestamp}")
             self.logs_folder_path.mkdir(parents=True, exist_ok=True)
             tasks_hash = {}
-            tasks_info = []
+            self.tasks_info = []
   
         print("Submitting tasks...")
         for year in range(year_start_inclusive, year_end_inclusive + 1):
@@ -158,9 +158,9 @@ class NasaEarthDataApi:
                         'year': year,
                         'month': month,
                     }
-                    tasks_info.append(task_info)
+                    self.tasks_info.append(task_info)
                     
-                    self.save_tasks_info(tasks_info)
+                    self.save_tasks_info()
     
     def format_date(self, date_str):
         parsed_date = datetime.strptime(date_str, '%m/%d/%Y')
@@ -234,9 +234,9 @@ class NasaEarthDataApi:
         task_id = task_response.json()['task_id']
         return task_id
         
-    def save_tasks_info(self, tasks_info: list):
+    def save_tasks_info(self):
         with open(self.logs_folder_path / self.earth_data_tasks_info_file_name, 'w') as f:
-            json.dump(tasks_info, f)
+            json.dump(self.tasks_info, f)
     
     def delete_tasks(self, tasks_ids: list):
         for task_id in tasks_ids:
@@ -244,11 +244,7 @@ class NasaEarthDataApi:
             print(f"Status Code: {task_response.status_code} {task_response.reason} {task_response.text}")
 
     def wait_until_tasks_complete(self):
-        tasks_info = []
-        with open(self.logs_folder_path / self.earth_data_tasks_info_file_name, 'w') as f:
-            tasks_info = json.load(f)
-        
-        tasks_ids = set([t['task_id'] for t in tasks_info])
+        tasks_ids = set([t['task_id'] for t in self.tasks_info])
         
         tasks_done = False
         while not tasks_done:
@@ -262,11 +258,8 @@ class NasaEarthDataApi:
     def download_data(self, data_output_base_path: str):
         print("Downloading data...")
         data_output_base_path = Path(data_output_base_path)
-        
-        with open(self.logs_folder_path / self.earth_data_tasks_info_file_name, 'w') as f:
-            tasks_info = json.load(f)
-        
-        for task_info in tasks_info:
+  
+        for task_info in self.tasks_info:
             task_id = task_info['task_id']
             product = task_info['product'].replace(".", "_").replace(" ", "_").replace("__","_")
             layer = task_info['layer'].replace(".", "_").replace(" ", "_").replace("__","_")
