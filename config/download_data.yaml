@@ -7,7 +7,7 @@ boundaries:
     output_path: "data/canada_boundary/"
     exclude_area_above_60_degree: True
 grid:
-    tile_resolution_in_meters: 250
+    tile_resolution_in_meters: 500
     tile_length_in_pixels: 512
 sources:
     nasa_earth_data:
@@ -38,3 +38,7 @@ sources:
                 - vp
             - NASADEM_NC.001:
                 - NASADEM_HGT
+logs:
+    logs_folder_path: null
+outputs:
+    data_output_base_path: "data/raw/"

@@ -1,5 +1,6 @@
 import getpass
 import hydra
+import os
 from pathlib import Path
 from omegaconf import DictConfig
 from boundaries.canada_boundary import CanadaBoundary
@@ -20,11 +21,17 @@ def select_products_layers(nasa_earth_data_api: NasaEarthDataApi, products_layer
             nasa_earth_data_api.select_layer(product_name_and_version, layer)
 
 
-@hydra.main(version_base=None, config_path="config", config_name="data_download")
+@hydra.main(version_base=None, config_path="config", config_name="download_data")
 def main(cfg : DictConfig) -> None:
     nasa_earth_data_api = NasaEarthDataApi()
-    nasa_earthdata_user = getpass.getpass(prompt = 'Enter NASA Earthdata Login Username: ')      
-    nasa_earthdata_password = getpass.getpass(prompt = 'Enter NASA Earthdata Login Password: ') 
+    
+    nasa_earthdata_user = os.environ.get("NASA_EARTH_DATA_USER", None)
+    if nasa_earthdata_user is None:
+        nasa_earthdata_user = getpass.getpass(prompt = 'Enter NASA Earthdata Login Username: ')
+          
+    nasa_earthdata_password = os.environ.get("NASA_EARTH_DATA_PASSWORD", None)
+    if nasa_earthdata_password is None:
+        nasa_earthdata_password = getpass.getpass(prompt = 'Enter NASA Earthdata Login Password: ') 
 
     nasa_earth_data_api.login(username=nasa_earthdata_user, password=nasa_earthdata_password)
     
@@ -34,6 +41,7 @@ def main(cfg : DictConfig) -> None:
     
     select_products_layers(nasa_earth_data_api, products_layers)
     
+    print("Loading Canada boundary...")
     canada = CanadaBoundary(CanadaBoundaryDataSource(Path(cfg.boundaries.output_path))) 
     canada.load(exclude_area_above_60_degree=cfg.boundaries.exclude_area_above_60_degree)
     
@@ -41,6 +49,7 @@ def main(cfg : DictConfig) -> None:
         tile_resolution_in_meters=cfg.grid.tile_resolution_in_meters,
         tile_length_in_pixels=cfg.grid.tile_length_in_pixels,    
     )
+    print("Tiling Canada...")
     tiles = grid.get_tiles(canada.boundary)
     
     nasa_earth_data_api.submit_tasks(
@@ -50,8 +59,13 @@ def main(cfg : DictConfig) -> None:
         month_start_inclusive=cfg.periods.month_start_inclusive,
         month_end_inclusive=cfg.periods.month_end_inclusive,
         tile_resolution_in_meters=cfg.grid.tile_resolution_in_meters,
-        tile_length_in_pixels=cfg.grid.tile_length_in_pixels
+        tile_length_in_pixels=cfg.grid.tile_length_in_pixels,
+        logs_folder_path=cfg.logs.logs_folder_path
     )
+    
+    nasa_earth_data_api.wait_until_tasks_complete()
+    
+    nasa_earth_data_api.download_data(output_base_path=cfg.outputs.data_output_base_path)
 
 if __name__ == "__main__":
     main()
