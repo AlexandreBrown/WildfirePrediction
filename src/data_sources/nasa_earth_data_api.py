@@ -70,17 +70,21 @@ class NasaEarthDataApi:
     def select_layer(self, product_and_version: str, layer: str):
         for selected_product in self.selected_products:
             if selected_product['ProductAndVersion'] == product_and_version:
-                selected_product['layer'] = layer
+                if 'layer' not in selected_product.keys():
+                    selected_product['layer'] = [layer]
+                else:
+                    selected_product['layer'] = selected_product['layer'] + [layer]
                 return
         raise Exception(f"Product {product_and_version} not found in selected products!")
     
     def get_products_layers(self) -> list:
         products_layers = []
         for selected_product in self.selected_products:
-            products_layers.append({
-                'product': selected_product['ProductAndVersion'],
-                'layer': selected_product['layer'],
-            })
+            for selected_layer in selected_product['layer']:
+                products_layers.append({
+                    'product': selected_product['ProductAndVersion'],
+                    'layer': selected_layer,
+                })
         return products_layers
     
     def display_projections(self): 
@@ -125,7 +129,6 @@ class NasaEarthDataApi:
             print(f"Year: {year}")
             for month in range(month_start_inclusive, month_end_inclusive + 1):
                 print(f"Month: {month}")
-                
                 for product_layer in self.get_products_layers():
                     product, layer = product_layer['product'], product_layer['layer']
                     print(f"Product: {product} | Layer: {layer}")
