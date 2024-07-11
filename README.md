@@ -77,3 +77,12 @@ The model receives as input the following features (we stack the features for th
 ## Target  
 - [NBAC Canada Fire Polygons](https://cwfis.cfs.nrcan.gc.ca/datamart)
 - Currently the model is trained to predict the future wildfire occurrences for the next 5 years.  
+
+# Contributing
+
+1. Create conda environment using `environment.yaml`
+2. Install pre-commit hooks  
+```bash
+pre-commit install --allow-missing-config
+```
+3. Install [Trufflehog](https://github.com/trufflesecurity/trufflehog)   

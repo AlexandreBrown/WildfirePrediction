@@ -12,4 +12,6 @@ dependencies:
   - conda-forge::hydra-core=1.3.2
   - conda-forge::imageio=2.34.2
   - conda-forge::cdsapi=0.7.0
+  - conda-forge::pre-commit=3.7.1
+  - conda-forge::trufflehog=2.2.1
   - pip
