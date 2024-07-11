@@ -81,7 +81,7 @@ def download_nasa_earth_data(cfg: DictConfig):
         month_end_inclusive=cfg.periods.month_end_inclusive,
         tile_resolution_in_meters=cfg.grid.tile_resolution_in_meters,
         tile_length_in_pixels=cfg.grid.tile_length_in_pixels,
-        logs_folder_path=cfg.logs.logs_folder_path
+        logs_folder_path=cfg.logs.nasa_earth_data_logs_folder_path
     )
     
     nasa_earth_data_api.wait_until_tasks_complete()

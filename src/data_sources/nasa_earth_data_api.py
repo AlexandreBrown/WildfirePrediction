@@ -253,6 +253,7 @@ class NasaEarthDataApi:
         while not tasks_done:
             print("Waiting for tasks to complete...")
             tasks_response = requests.get(f"{self.base_url}task", headers=self.auth_header).json()
+            tasks_response = [t for t in tasks_response if t['task_id'] in tasks_ids]
             nb_tasks_done = len([t for t in tasks_response if t['status'] == 'done'])
             tasks_done = nb_tasks_done == len(tasks_ids)
             if not tasks_done:
