@@ -1,4 +1,3 @@
-from asyncio import tasks
 import json
 import hashlib
 import requests
@@ -10,6 +9,7 @@ from pathlib import Path
 from IPython.display import display, HTML
 from typing import Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 
 class NasaEarthDataApi:
@@ -262,33 +262,38 @@ class NasaEarthDataApi:
         print("Downloading data...")
         data_output_base_path = Path(data_output_base_path)
   
-        for task_info in self.tasks_info:
-            task_id = task_info['task_id']
-            product = task_info['product'].replace(".", "_").replace(" ", "_").replace("__","_")
-            layer = task_info['layer'].replace(".", "_").replace(" ", "_").replace("__","_")
-            year = task_info['year']
-            month = task_info['month']
-            task_hash = task_info['task_hash']
-            
-            timestamp = time.strftime("%Y%m%d-%H%M%S")
-            print(f"{timestamp} Task ID: {task_id} | Product: {product} | Layer: {layer} | Year: {year} | Month: {month}")
-            
-            output_path = data_output_base_path / f"{year}" / f"{month}" /f"{product}_{layer}_{task_hash}" / "raw_tiles"
-            output_path.mkdir(parents=True, exist_ok=True)
-            
-            bundle = requests.get(f'{self.base_url}bundle/{task_id}', headers=self.auth_header).json()
-            
-            files = {}                                             
-            for f in bundle['files']: 
-                files[f['file_id']] = f['file_name']   
-            
-            for f in files:
-                dl = requests.get(f"{self.base_url}bundle/{task_id}/{f}", headers=self.auth_header, stream=True, allow_redirects='True')                                # Get a stream to the bundle file
-                if files[f].endswith('.tif'):
-                    filename = files[f].split('/')[1]
-                else:
-                    filename = files[f] 
-                filepath = output_path / Path(filename)                                                       # Create output file path
-                with open(filepath, 'wb') as f:                                                                  # Write file to dest dir
-                    for data in dl.iter_content(chunk_size=8192): 
-                        f.write(data) 
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for task_info in self.tasks_info:
+                task_id = task_info['task_id']
+                product = task_info['product'].replace(".", "_").replace(" ", "_").replace("__","_")
+                layer = task_info['layer'].replace(".", "_").replace(" ", "_").replace("__","_")
+                year = task_info['year']
+                month = task_info['month']
+                task_hash = task_info['task_hash']
+                
+                print(f"Task ID: {task_id} | Product: {product} | Layer: {layer} | Year: {year} | Month: {month}")
+                
+                output_path = data_output_base_path / f"{year}" / f"{month}" /f"{product}_{layer}_{task_hash}" / "raw_tiles"
+                output_path.mkdir(parents=True, exist_ok=True)
+                
+                bundle = requests.get(f'{self.base_url}bundle/{task_id}', headers=self.auth_header).json()
+                
+                files = {}                                             
+                for f in bundle['files']: 
+                    files[f['file_id']] = f['file_name']   
+                
+                for f in files:
+                    executor.submit(self.download_file, task_id, f, files, output_path)
+        
+    def download_file(self, task_id: str, f, files: dict, output_path: Path):
+        dl = requests.get(f"{self.base_url}bundle/{task_id}/{f}", headers=self.auth_header, stream=True, allow_redirects='True')                                # Get a stream to the bundle file
+        if files[f].endswith('.tif'):
+            filename = files[f].split('/')[1]
+        else:
+            filename = files[f] 
+        filepath = output_path / Path(filename)    
+        megabytes = 20
+        chunk_size_in_bytes = megabytes * 1024 * 1024
+        with open(filepath, 'wb') as f:                                                                 
+            for data in dl.iter_content(chunk_size=chunk_size_in_bytes): 
+                f.write(data) 
