@@ -271,9 +271,13 @@ class NasaEarthDataApi:
                 month = task_info['month']
                 task_hash = task_info['task_hash']
                 
-                print(f"Task ID: {task_id} | Product: {product} | Layer: {layer} | Year: {year} | Month: {month}")
+                if self.products[task_info['product']]['TemporalGranularity'] == 'Static':
+                    print(f"Task ID: {task_id} | Product: {product} | Layer: {layer} | Static")
+                    output_path = data_output_base_path / "static_data" / f"{product}_{layer}_{task_hash}" / "raw_tiles"
+                else:
+                    print(f"Task ID: {task_id} | Product: {product} | Layer: {layer} | Year: {year} | Month: {month}")
+                    output_path = data_output_base_path / f"{year}" / f"{month}" /f"{product}_{layer}_{task_hash}" / "raw_tiles"
                 
-                output_path = data_output_base_path / f"{year}" / f"{month}" /f"{product}_{layer}_{task_hash}" / "raw_tiles"
                 output_path.mkdir(parents=True, exist_ok=True)
                 
                 bundle = requests.get(f'{self.base_url}bundle/{task_id}', headers=self.auth_header).json()
