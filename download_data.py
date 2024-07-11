@@ -86,7 +86,7 @@ def download_nasa_earth_data(cfg: DictConfig):
     
     nasa_earth_data_api.wait_until_tasks_complete()
     
-    nasa_earth_data_api.download_data(output_base_path=cfg.outputs.data_output_base_path)
+    nasa_earth_data_api.download_data(data_output_base_path=cfg.outputs.data_output_base_path)
 
 
 def select_nasa_earth_data_products_layers(nasa_earth_data_api: NasaEarthDataApi, products_layers: DictConfig) -> None:

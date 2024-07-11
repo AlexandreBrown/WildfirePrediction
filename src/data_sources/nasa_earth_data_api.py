@@ -109,11 +109,10 @@ class NasaEarthDataApi:
         tiles = tiles.to_crs(epsg=4326)
         tiles_json = json.loads(tiles.to_json())
         
-        
         if logs_folder_path is not None:
             print(f"Resuming tasks from log folder {str(logs_folder_path)}...")
             self.logs_folder_path = Path(logs_folder_path)
-            with open(self.logs_folder_path / self.earth_data_tasks_info_file_name, 'w') as f:
+            with open(self.logs_folder_path / self.earth_data_tasks_info_file_name, 'r') as f:
                 self.tasks_info = json.load(f)
             
             tasks_hash = {t['task_hash']: True for t in self.tasks_info}
