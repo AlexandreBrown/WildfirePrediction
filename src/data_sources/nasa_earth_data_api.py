@@ -270,6 +270,9 @@ class NasaEarthDataApi:
             month = task_info['month']
             task_hash = task_info['task_hash']
             
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            print(f"{timestamp} Task ID: {task_id} | Product: {product} | Layer: {layer} | Year: {year} | Month: {month}")
+            
             output_path = data_output_base_path / f"{year}" / f"{month}" /f"{product}_{layer}_{task_hash}" / "raw_tiles"
             output_path.mkdir(parents=True, exist_ok=True)
             
