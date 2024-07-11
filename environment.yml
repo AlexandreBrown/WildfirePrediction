@@ -11,4 +11,5 @@ dependencies:
   - conda-forge::ipykernel=6.29.5
   - conda-forge::hydra-core=1.3.2
   - conda-forge::imageio=2.34.2
+  - conda-forge::cdsapi=0.7.0
   - pip

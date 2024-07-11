@@ -10,6 +10,17 @@ grid:
     tile_resolution_in_meters: 500
     tile_length_in_pixels: 512
 sources:
+   era5:
+        product_type: "reanalysis"
+        dataset: "reanalysis-era5-single-levels-monthly-means"
+        variables:
+            - 100m_u_component_of_wind
+            - 100m_v_component_of_wind 
+            - 2m_temperature
+            - potential_evaporation
+            - surface_net_solar_radiation
+            - surface_runoff
+            - total_precipitation 
     nasa_earth_data:
         products_layers:
             - MOD13Q1.061:
@@ -19,26 +30,15 @@ sources:
                 - Percent_NonVegetated
                 - Percent_NonTree_Vegetation
                 - Percent_Tree_Cover
-            - MOD44W.061:
-                - water_mask
             - MOD15A2H.061:
                 - Lai_500m
-            - MOD11A2.061:
-                - LST_Day_1km
-                - LST_Night_1km
+            - MOD44W.061:
+                - water_mask
             - MOD14A2.061:
                 - FireMask
-            - MOD16A3GF.061:
-                - ET_500m
-            - DAYMET.004:
-                - dayl
-                - prcp
-                - tmax
-                - tmin
-                - vp
             - NASADEM_NC.001:
                 - NASADEM_HGT
 logs:
-    logs_folder_path: null
+    nasa_earth_data_logs_folder_path: null
 outputs:
     data_output_base_path: "data/raw/"

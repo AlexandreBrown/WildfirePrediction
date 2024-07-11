@@ -13,7 +13,7 @@ class FireOccurrenceTarget:
         fire_data_source: NbacFireDataSource, 
         canada: CanadaBoundary,
         resolution_in_meters: int,
-        target_epsg_code: int = 3347,
+        target_epsg_code: int = 3978,
         raw_data_output_folder_path: Path = Path("../data/raw/"),
         target_data_output_folder_path: Path = Path("../data/target/")
     ):
