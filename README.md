@@ -84,5 +84,4 @@ The model receives as input the following features (we stack the features for th
 2. Install pre-commit hooks  
 ```bash
 pre-commit install --allow-missing-config
-```
-3. Install [Trufflehog](https://github.com/trufflesecurity/trufflehog)   
+```  
