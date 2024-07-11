@@ -4,6 +4,6 @@ repos:
     - id: trufflehog
       name: TruffleHog
       description: Detect secrets in your data.
-      entry: bash -c 'trufflehog ./ --max_depth=2'
+      entry: bash -c 'trufflehog ./ --max_depth=5'
       language: system
       stages: ["commit", "push"]
