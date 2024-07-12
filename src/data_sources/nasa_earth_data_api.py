@@ -1,6 +1,7 @@
 import json
 import hashlib
 import requests
+import logging
 import calendar
 import pandas as pd
 import geopandas as gpd
@@ -12,6 +13,7 @@ from IPython.display import display, HTML
 from typing import Optional
 from datetime import datetime
 
+logging.basicConfig(level=logging.INFO)
 
 class NasaEarthDataApi:
     def __init__(self):
@@ -31,11 +33,11 @@ class NasaEarthDataApi:
         self.token = token_response['token']                      
         self.auth_header = {'Authorization': f"Bearer {self.token}"}
         
-        print("Login successful!")
+        logging.info("Login successful!")
     
     def load_products(self) -> dict:
         product_response = requests.get(f"{self.base_url}product").json()                         
-        print(f"AppEEARS currently supports {len(product_response)} products.") 
+        logging.info(f"AppEEARS currently supports {len(product_response)} products.") 
         self.products = {p['ProductAndVersion']: p for p in product_response}
     
     def display_products(self, products: dict):
@@ -54,7 +56,7 @@ class NasaEarthDataApi:
     
     def select_product(self, product_and_version: str):
         if product_and_version in [p['ProductAndVersion'] for p in self.selected_products]:
-            print(f"Product {product_and_version} already selected, action ignored!")
+            logging.info(f"Product {product_and_version} already selected, action ignored!")
             return
         
         self.selected_products.append(self.products[product_and_version])
@@ -111,7 +113,7 @@ class NasaEarthDataApi:
         tiles_json = json.loads(tiles.to_json())
         
         if logs_folder_path is not None:
-            print(f"Resuming tasks from log folder {str(logs_folder_path)}...")
+            logging.info(f"Resuming tasks from log folder {str(logs_folder_path)}...")
             self.logs_folder_path = Path(logs_folder_path)
             with open(self.logs_folder_path / self.earth_data_tasks_info_file_name, 'r') as f:
                 self.tasks_info = json.load(f)
@@ -123,15 +125,15 @@ class NasaEarthDataApi:
             self.logs_folder_path.mkdir(parents=True, exist_ok=True)
             tasks_hash = {}
             self.tasks_info = []
-  
-        print("Submitting tasks...")
+        
+        logging.info("Submitting tasks...")
         for year in range(year_start_inclusive, year_end_inclusive + 1):
-            print(f"Year: {year}")
+            logging.info(f"Year: {year}")
             for month in range(month_start_inclusive, month_end_inclusive + 1):
-                print(f"Month: {month}")
+                logging.info(f"Month: {month}")
                 for product_layer in self.get_products_layers():
                     product, layer = product_layer['product'], product_layer['layer']
-                    print(f"Product: {product} | Layer: {layer}")
+                    logging.info(f"Product: {product} | Layer: {layer}")
                     
                     self.wait_until_tasks_limit_not_reached()
 
@@ -144,10 +146,10 @@ class NasaEarthDataApi:
                         }]
                     
                     task_hash = self.hash_task(task)
-                    print(f"Task Hash: {task_hash}")
+                    logging.info(f"Task Hash: {task_hash}")
                     
                     if tasks_hash.get(task_hash) is not None:
-                        print(f"Task {task_hash} already submitted, action ignored!")
+                        logging.info(f"Task {task_hash} already submitted, action ignored!")
                         continue
                     
                     task_id = self.submit_task(task)
@@ -173,7 +175,7 @@ class NasaEarthDataApi:
     def wait_until_tasks_limit_not_reached(self):
         tasks_limit_reached = True
         while tasks_limit_reached:
-            print("Waiting for tasks to complete...")
+            logging.info("Waiting for tasks to complete...")
             tasks_response = requests.get(f"{self.base_url}task", headers=self.auth_header).json()
             nb_tasks_not_done = len([t for t in tasks_response if t['status'] != 'done'])
             tasks_limit_reached = nb_tasks_not_done >= 1000
@@ -233,7 +235,7 @@ class NasaEarthDataApi:
         task: dict
     ) -> str:
         task_response = requests.post(f"{self.base_url}task", json=task, headers=self.auth_header)
-        print(f"Status Code: {task_response.status_code} {task_response.reason} {task_response.text}")
+        logging.info(f"Status Code: {task_response.status_code} {task_response.reason} {task_response.text}")
         task_id = task_response.json()['task_id']
         return task_id
         
@@ -244,14 +246,14 @@ class NasaEarthDataApi:
     def delete_tasks(self, tasks_ids: list):
         for task_id in tasks_ids:
             task_response = requests.delete(f"{self.base_url}task/{task_id}", headers=self.auth_header)
-            print(f"Status Code: {task_response.status_code} {task_response.reason} {task_response.text}")
+            logging.info(f"Status Code: {task_response.status_code} {task_response.reason} {task_response.text}")
 
     def wait_until_tasks_complete(self):
         tasks_ids = set([t['task_id'] for t in self.tasks_info])
         
         tasks_done = False
         while not tasks_done:
-            print("Waiting for tasks to complete...")
+            logging.info("Waiting for tasks to complete...")
             tasks_response = requests.get(f"{self.base_url}task", headers=self.auth_header).json()
             tasks_response = [t for t in tasks_response if t['task_id'] in tasks_ids]
             nb_tasks_done = len([t for t in tasks_response if t['status'] == 'done'])
@@ -260,13 +262,13 @@ class NasaEarthDataApi:
                 time.sleep(600)
 
     async def download_data(self, data_output_base_path: str):
-        print("Downloading data...")
+        logging.info("Downloading data...")
         data_output_base_path = Path(data_output_base_path)
  
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None)) as session:
             for task_info in self.tasks_info:
                 await self.download_task_files(task_info, data_output_base_path, session)
-                print(f"Task {task_info['task_id']} {task_info['product']} {task_info['layer']} {task_info['year']} {task_info['month']} downloaded!")
+                logging.info(f"Task {task_info['task_id']} {task_info['product']} {task_info['layer']} {task_info['year']} {task_info['month']} downloaded!")
 
     async def download_task_files(self, task_info: dict, data_output_base_path: Path, session: aiohttp.ClientSession):
         task_id = task_info['task_id']
@@ -293,13 +295,16 @@ class NasaEarthDataApi:
     
     async def download_file(self, session, task_id: str, file_id, file_name: str, output_path: Path):
         async with session.get(f"{self.base_url}bundle/{task_id}/{file_id}", headers=self.auth_header) as dl:
+            dl.raise_for_status()  # Raise an HTTPError for bad responses
             if file_name.endswith('.tif'):
                 filename = file_name.split('/')[1]
             else:
                 filename = file_name
 
             filepath = output_path / Path(filename)
-            
             with open(filepath, 'wb') as f:
-                data = await dl.content.read()
-                f.write(data)
+                while True:
+                    chunk = await dl.content.read(8192)
+                    if not chunk:
+                        break
+                    f.write(chunk)
