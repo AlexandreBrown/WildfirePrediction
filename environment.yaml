@@ -14,4 +14,5 @@ dependencies:
   - conda-forge::cdsapi=0.7.0
   - conda-forge::pre-commit=3.7.1
   - conda-forge::trufflehog=2.2.1
+  - conda-forge::aiohttp=3.9.5
   - pip

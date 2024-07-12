@@ -5,11 +5,12 @@ import calendar
 import pandas as pd
 import geopandas as gpd
 import time
+import aiohttp
+import asyncio
 from pathlib import Path
 from IPython.display import display, HTML
 from typing import Optional
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
 
 class NasaEarthDataApi:
@@ -258,46 +259,47 @@ class NasaEarthDataApi:
             if not tasks_done:
                 time.sleep(600)
 
-    def download_data(self, data_output_base_path: str):
+    async def download_data(self, data_output_base_path: str):
         print("Downloading data...")
         data_output_base_path = Path(data_output_base_path)
-  
-        with ThreadPoolExecutor(max_workers=8) as executor:
+ 
+        async with aiohttp.ClientSession() as session:
             for task_info in self.tasks_info:
-                task_id = task_info['task_id']
-                product = task_info['product'].replace(".", "_").replace(" ", "_").replace("__","_")
-                layer = task_info['layer'].replace(".", "_").replace(" ", "_").replace("__","_")
-                year = task_info['year']
-                month = task_info['month']
-                task_hash = task_info['task_hash']
-                
-                if self.products[task_info['product']]['TemporalGranularity'] == 'Static':
-                    print(f"Task ID: {task_id} | Product: {product} | Layer: {layer} | Static")
-                    output_path = data_output_base_path / "static_data" / f"{product}_{layer}_{task_hash}" / "raw_tiles"
-                else:
-                    print(f"Task ID: {task_id} | Product: {product} | Layer: {layer} | Year: {year} | Month: {month}")
-                    output_path = data_output_base_path / f"{year}" / f"{month}" /f"{product}_{layer}_{task_hash}" / "raw_tiles"
-                
-                output_path.mkdir(parents=True, exist_ok=True)
-                
-                bundle = requests.get(f'{self.base_url}bundle/{task_id}', headers=self.auth_header).json()
-                
-                files = {}                                             
-                for f in bundle['files']: 
-                    files[f['file_id']] = f['file_name']   
-                
-                for f in files:
-                    executor.submit(self.download_file, task_id, f, files, output_path)
+                await self.download_task_files(task_info, data_output_base_path, session)
+                print(f"Task {task_info['task_id']} {task_info['product']} {task_info['layer']} {task_info['year']} {task_info['month']} downloaded!")
+
+    async def download_task_files(self, task_info: dict, data_output_base_path: Path, session: aiohttp.ClientSession):
+        task_id = task_info['task_id']
+        product = task_info['product'].replace(".", "_").replace(" ", "_").replace("__", "_")
+        layer = task_info['layer'].replace(".", "_").replace(" ", "_").replace("__", "_")
+        year = task_info['year']
+        month = task_info['month']
+        task_hash = task_info['task_hash']
         
-    def download_file(self, task_id: str, f, files: dict, output_path: Path):
-        dl = requests.get(f"{self.base_url}bundle/{task_id}/{f}", headers=self.auth_header, stream=True, allow_redirects='True')                                # Get a stream to the bundle file
-        if files[f].endswith('.tif'):
-            filename = files[f].split('/')[1]
+        if self.products[task_info['product']]['TemporalGranularity'] == 'Static':
+            output_path = data_output_base_path / "static_data" / f"{product}_{layer}_{task_hash}" / "raw_tiles"
         else:
-            filename = files[f] 
-        filepath = output_path / Path(filename)    
-        megabytes = 20
-        chunk_size_in_bytes = megabytes * 1024 * 1024
-        with open(filepath, 'wb') as f:                                                                 
-            for data in dl.iter_content(chunk_size=chunk_size_in_bytes): 
-                f.write(data) 
+            output_path = data_output_base_path / f"{year}" / f"{month}" / f"{product}_{layer}_{task_hash}" / "raw_tiles"
+        
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        bundle = await session.get(f'{self.base_url}bundle/{task_id}', headers=self.auth_header)
+        bundle = await bundle.json()
+        
+        files = {f['file_id']: f['file_name'] for f in bundle['files']}
+
+        tasks = [self.download_file(session, task_id, file_id, file_name, output_path) for file_id, file_name in files.items()]
+        await asyncio.gather(*tasks)
+    
+    async def download_file(self, session, task_id: str, file_id, file_name: str, output_path: Path):
+        async with session.get(f"{self.base_url}bundle/{task_id}/{file_id}", headers=self.auth_header) as dl:
+            if file_name.endswith('.tif'):
+                filename = file_name.split('/')[1]
+            else:
+                filename = file_name
+
+            filepath = output_path / Path(filename)
+            
+            with open(filepath, 'wb') as f:
+                data = await dl.content.read()
+                f.write(data)

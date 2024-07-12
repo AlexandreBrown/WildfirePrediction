@@ -10,7 +10,7 @@ grid:
     tile_resolution_in_meters: 500
     tile_length_in_pixels: 512
 sources:
-   era5:
+    era5:
         product_type: "reanalysis"
         dataset: "reanalysis-era5-single-levels-monthly-means"
         variables:
@@ -39,6 +39,6 @@ sources:
             - NASADEM_NC.001:
                 - NASADEM_HGT
 logs:
-    nasa_earth_data_logs_folder_path: null
+    nasa_earth_data_logs_folder_path: "logs/download_data/20240711-081839/"
 outputs:
     data_output_base_path: "data/raw/"
