@@ -12,6 +12,8 @@ from pathlib import Path
 from IPython.display import display, HTML
 from typing import Optional
 from datetime import datetime
+from omegaconf import DictConfig
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -261,9 +263,30 @@ class NasaEarthDataApi:
             if not tasks_done:
                 time.sleep(600)
 
-    async def download_data(self, data_output_base_path: str):
+    async def download_data(
+        self, 
+        data_output_base_path: str,
+        year_start_inclusive: int,
+        year_end_inclusive: int,
+        month_start_inclusive: int,
+        month_end_inclusive: int,
+        products_names: list,
+        products_layers: list
+    ):
         logging.info("Downloading data...")
         data_output_base_path = Path(data_output_base_path)
+        
+        tasks_info_of_interest = []
+        for task_info in self.tasks_info:
+            if task_info['year'] >= year_start_inclusive and \
+                task_info['year'] <= year_end_inclusive and \
+                    task_info['month'] >= month_start_inclusive and \
+                        task_info['month'] <= month_end_inclusive and \
+                            task_info['product'] in products_names and \
+                                task_info['layer'] in products_layers:
+                    tasks_info_of_interest.append(task_info)
+ 
+        self.tasks_info = tasks_info_of_interest
  
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None)) as session:
             for task_info in self.tasks_info:
@@ -290,21 +313,23 @@ class NasaEarthDataApi:
         
         files = {f['file_id']: f['file_name'] for f in bundle['files']}
 
-        tasks = [self.download_file(session, task_id, file_id, file_name, output_path) for file_id, file_name in files.items()]
+        asyncio_semaphore = asyncio.Semaphore(64)
+        tasks = [asyncio.create_task(self.download_file(asyncio_semaphore, session, task_id, file_id, file_name, output_path)) for file_id, file_name in files.items()]
         await asyncio.gather(*tasks)
     
-    async def download_file(self, session, task_id: str, file_id, file_name: str, output_path: Path):
-        async with session.get(f"{self.base_url}bundle/{task_id}/{file_id}", headers=self.auth_header) as dl:
-            dl.raise_for_status()  # Raise an HTTPError for bad responses
-            if file_name.endswith('.tif'):
-                filename = file_name.split('/')[1]
-            else:
-                filename = file_name
+    async def download_file(self, asyncio_semaphore, session, task_id: str, file_id, file_name: str, output_path: Path):
+        async with asyncio_semaphore:
+            async with session.get(f"{self.base_url}bundle/{task_id}/{file_id}", headers=self.auth_header) as dl:
+                dl.raise_for_status()
+                if file_name.endswith('.tif'):
+                    filename = file_name.split('/')[1]
+                else:
+                    filename = file_name
 
-            filepath = output_path / Path(filename)
-            with open(filepath, 'wb') as f:
-                while True:
-                    chunk = await dl.content.read(8192)
-                    if not chunk:
-                        break
-                    f.write(chunk)
+                filepath = output_path / Path(filename)
+                with open(filepath, 'wb') as f:
+                    while True:
+                        chunk = await dl.content.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)

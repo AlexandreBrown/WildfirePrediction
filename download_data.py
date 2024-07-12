@@ -4,6 +4,7 @@ import os
 import cdsapi
 import shutil
 import asyncio
+import itertools
 from pathlib import Path
 from omegaconf import DictConfig
 from boundaries.canada_boundary import CanadaBoundary
@@ -87,7 +88,19 @@ def download_nasa_earth_data(cfg: DictConfig):
     
     nasa_earth_data_api.wait_until_tasks_complete()
     
-    asyncio.run(nasa_earth_data_api.download_data(data_output_base_path=cfg.outputs.data_output_base_path))
+    products_names = [list(k.keys())[0] for k in cfg.sources.nasa_earth_data.products_layers]
+    products_layers = list(itertools.chain.from_iterable([list(k.values())[0] for k in cfg.sources.nasa_earth_data.products_layers]))
+    
+    asyncio.run(nasa_earth_data_api.download_data(
+        data_output_base_path=cfg.outputs.data_output_base_path,
+        year_start_inclusive=cfg.periods.year_start_inclusive,
+        year_end_inclusive=cfg.periods.year_end_inclusive,
+        month_start_inclusive=cfg.periods.month_start_inclusive,
+        month_end_inclusive=cfg.periods.month_end_inclusive,
+        products_names=products_names,
+        products_layers=products_layers
+        )
+    )
 
 
 def select_nasa_earth_data_products_layers(nasa_earth_data_api: NasaEarthDataApi, products_layers: DictConfig) -> None:
