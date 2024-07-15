@@ -12,7 +12,6 @@ from pathlib import Path
 from IPython.display import display, HTML
 from typing import Optional
 from datetime import datetime
-from omegaconf import DictConfig
 
 
 logging.basicConfig(level=logging.INFO)
@@ -312,23 +311,36 @@ class NasaEarthDataApi:
         
         files = {f['file_id']: f['file_name'] for f in bundle['files']}
 
-        asyncio_semaphore = asyncio.Semaphore(64)
+        asyncio_semaphore = asyncio.Semaphore(24)
         tasks = [asyncio.create_task(self.download_file(asyncio_semaphore, session, task_id, file_id, file_name, output_path)) for file_id, file_name in files.items()]
         await asyncio.gather(*tasks)
     
     async def download_file(self, asyncio_semaphore, session, task_id: str, file_id, file_name: str, output_path: Path):
-        async with asyncio_semaphore:
-            async with session.get(f"{self.base_url}bundle/{task_id}/{file_id}", headers=self.auth_header) as dl:
-                dl.raise_for_status()
-                if file_name.endswith('.tif'):
-                    filename = file_name.split('/')[1]
-                else:
-                    filename = file_name
+        max_attempts = 10
+        attempt = 0
 
-                filepath = output_path / Path(filename)
-                with open(filepath, 'wb') as f:
-                    while True:
-                        chunk = await dl.content.read(8192)
-                        if not chunk:
-                            break
-                        f.write(chunk)
+        while attempt <= max_attempts:
+            try:
+                async with asyncio_semaphore:
+                    async with session.get(f"{self.base_url}bundle/{task_id}/{file_id}", headers=self.auth_header) as dl:
+                        dl.raise_for_status()
+                        if file_name.endswith('.tif'):
+                            filename = file_name.split('/')[1]
+                        else:
+                            filename = file_name
+
+                        filepath = output_path / Path(filename)
+                        with open(filepath, 'wb') as f:
+                            while True:
+                                chunk = await dl.content.read(8192)
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                break
+            except Exception as e:
+                attempt += 1
+                if attempt > max_attempts:
+                    logging.error(f"Failed to download {file_name} after {max_attempts} attempts")
+                    raise e
+                logging.info(f"Attempt {attempt} for {file_name} failed: {e}. Retrying...")
+                await asyncio.sleep(5)
