@@ -1,6 +1,8 @@
 import hydra
 import logging
 from omegaconf import DictConfig
+from boundaries.canada_boundary import CanadaBoundary
+from data_sources.canada_boundary_data_source import CanadaBoundaryDataSource
 from preprocessing.data_aggregator import DataAggregator
 from preprocessing.tiles import Tiles
 from pathlib import Path
@@ -9,7 +11,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 
 
-def process_dynamic_data(cfg: DictConfig):
+def process_dynamic_data(cfg: DictConfig, boundary: CanadaBoundary):
     logging.info("Processing dynamic sources...")
     dynamic_sources = cfg.sources.dynamic
     for source_name, source_values in dynamic_sources.items():
@@ -34,6 +36,7 @@ def process_dynamic_data(cfg: DictConfig):
                     tile_size_in_pixels=cfg.resolution.tile_size_in_pixels,
                     pixel_size_in_meters=cfg.resolution.pixel_size_in_meters,
                     output_folder=tiling_output_folder_path,
+                    boundary=boundary,
                     source_srs=cfg.projections.source_srs,
                     target_srs=cfg.projections.target_srs,
                     resample_algorithm=cfg.resolution.resample_algorithm
@@ -64,7 +67,7 @@ def process_dynamic_data(cfg: DictConfig):
             
             year_data_aggregator = DataAggregator()
 
-            logging.info("Aggregating yearly data for tiles...")
+            logging.info(f"Aggregating yearly data for {len(months_aggregated_data_paths)} tiles...")
             
             year_output_folder_path = Path(cfg.paths.output_folder_path) / Path(f"{year}") / Path(f"{source_name}") / Path("year_aggregated_data")
             
@@ -82,7 +85,7 @@ def process_dynamic_data(cfg: DictConfig):
                 raise ValueError(f"Unknown aggregation method: {source_values['aggregate_by']}")
     
 
-def process_static_data(cfg: DictConfig):
+def process_static_data(cfg: DictConfig, boundary: CanadaBoundary):
     logging.info("Processing static sources...")
     static_sources = cfg.sources.static
     for source_name, source_values in static_sources.items():
@@ -100,6 +103,7 @@ def process_static_data(cfg: DictConfig):
             tile_size_in_pixels=cfg.resolution.tile_size_in_pixels,
             pixel_size_in_meters=cfg.resolution.pixel_size_in_meters,
             output_folder=tiling_output_folder_path,
+            boundary=boundary,
             source_srs=cfg.projections.source_srs,
             target_srs=cfg.projections.target_srs,
             resample_algorithm=cfg.resolution.resample_algorithm
@@ -112,11 +116,14 @@ def process_static_data(cfg: DictConfig):
 def main(cfg : DictConfig):
     logging.info("Generating dataset...")
     
+    boundary = CanadaBoundary(CanadaBoundaryDataSource(Path(cfg.boundaries.output_path)), target_epsg=cfg.projections.target_srs)
+    boundary.load(provinces=cfg.boundaries.provinces)
+    
     if "dynamic" in cfg.sources:
-        process_dynamic_data(cfg)
+        process_dynamic_data(cfg, boundary)
     
     if "static" in cfg.sources:
-        process_static_data(cfg)
+        process_static_data(cfg, boundary)
 
 if __name__ == "__main__":
     main()

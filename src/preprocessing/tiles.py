@@ -3,6 +3,8 @@ import logging
 from osgeo import gdal
 from osgeo import osr
 from pathlib import Path
+from shapely.geometry import box
+from boundaries.canada_boundary import CanadaBoundary
 
 
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +18,7 @@ class Tiles:
         tile_size_in_pixels: int,
         pixel_size_in_meters: int,
         output_folder: Path,
+        boundary: CanadaBoundary,
         source_srs: int = 4326,
         target_srs: int = 3978,
         resample_algorithm: str = "bilinear",
@@ -28,6 +31,7 @@ class Tiles:
         self.target_srs = target_srs
         self.resample_algorithm = resample_algorithm
         self.raw_tiles_folder = raw_tiles_folder
+        self.boundary = boundary
         
         self.output_folder.mkdir(parents=True, exist_ok=True)
     
@@ -111,7 +115,13 @@ class Tiles:
                     no_data_value = raster_band.GetNoDataValue()
                     non_zero_data_count = np.count_nonzero(actual_data != no_data_value)
                     
-                    keep_tile = non_zero_data_count > 0
+                    upper_left_x, xres, _, upper_left_y, _, yres  = tile_ds.GetGeoTransform()
+                    lower_right_x = upper_left_x + (tile_ds.RasterXSize * xres)
+                    lower_right_y = upper_left_y + (tile_ds.RasterYSize * yres)
+                    tile_box = box(upper_left_x, upper_left_y, lower_right_x, lower_right_y)
+                    tile_intersects_area_of_interest = any(self.boundary.boundary.intersects(tile_box))
+                    
+                    keep_tile = non_zero_data_count > 0 and tile_intersects_area_of_interest
                     if not keep_tile:
                         tile_nc_file.unlink()
                         break
