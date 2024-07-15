@@ -1,6 +1,6 @@
 periods:
   year_start_inclusive: 2001
-  year_end_inclusive: 2002
+  year_end_inclusive: 2005
   month_start_inclusive: 1
   month_end_inclusive: 12
 boundaries:
@@ -9,7 +9,8 @@ boundaries:
 resolution:
   pixel_size_in_meters: 250
   tile_size_in_pixels: 512
-  resample_algorithm: "bilinear"
+  resample_algorithm_continuous: "lanczos"
+  resample_algorithm_categorical: "nearest"
 projections:
   source_srs: 4326
   target_srs: 3978
@@ -21,48 +22,64 @@ sources:
       era5_reanalysis_100m_u_component_of_wind:
         layer: ""
         aggregate_by: "average"
+        data_type: "continuous"
       era5_reanalysis_100m_v_component_of_wind:
         layer: ""
         aggregate_by: "average"
+        data_type: "continuous"
       era5_reanalysis_2m_temperature:
         layer: ""
         aggregate_by: "average"
+        data_type: "continuous"
       era5_reanalysis_potential_evaporation:
         layer: ""
         aggregate_by: "average"
+        data_type: "continuous"
       era5_reanalysis_net_solar_radiation:
         layer: ""
         aggregate_by: "average"
+        data_type: "continuous"
       era5_reanalysis_surface_runoff:
         layer: ""
         aggregate_by: "average"
+        data_type: "continuous"
       era5_reanalysis_total_precipitation:
         layer: ""
         aggregate_by: "average"
+        data_type: "continuous"
       MOD13Q1_061_250m_16_days_NDVI:
         layer: "_250m_16_days_NDVI"
         aggregate_by: "average"
+        data_type: "continuous"
       MOD13Q1_061_250m_16_days_EVI:
         layer: "_250m_16_days_EVI"
         aggregate_by: "average"
+        data_type: "continuous"
       MOD44B_061_Percent_NonVegetated:
         layer: "Percent_NonVegetated"
         aggregate_by: "average"
+        data_type: "continuous"
       MOD44B_061_Percent_NonTree_Vegetation:
         layer: "Percent_NonTree_Vegetation"
         aggregate_by: "average"
+        data_type: "continuous"
       MOD44B_061_Percent_Tree_Cover:
         layer: "Percent_Tree_Cover"
         aggregate_by: "average"
+        data_type: "continuous"
       MOD15A2H_061_Lai_500m:
         layer: "Lai_500m"
         aggregate_by: "average"
+        data_type: "continuous"
       MOD44W_061_water_mask:
         layer: "water_mask"
         aggregate_by: "max"
+        data_type: "categorical"
       MOD14A2_061_FireMask:
         layer: "FireMask"
         aggregate_by: "max"
+        data_type: "categorical"
     static:
       NASADEM_NC_001_NASADEM_HGT:
         layer: "NASADEM_HGT"
+        data_type: "continuous"
