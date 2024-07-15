@@ -5,7 +5,7 @@ periods:
     month_end_inclusive: 12
 boundaries:
     output_path: "data/canada_boundary/"
-    exclude_area_above_60_degree: True
+    provinces: ["NL", "PE", "NS", "NB", "QC", "ON", "MB", "SK", "AB", "BC"]
 grid:
     tile_resolution_in_meters: 500
     tile_length_in_pixels: 512

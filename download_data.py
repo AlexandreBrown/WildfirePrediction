@@ -66,7 +66,7 @@ def download_nasa_earth_data(cfg: DictConfig):
     
     print("Loading Canada boundary...")
     canada = CanadaBoundary(CanadaBoundaryDataSource(Path(cfg.boundaries.output_path))) 
-    canada.load(exclude_area_above_60_degree=cfg.boundaries.exclude_area_above_60_degree)
+    canada.load(provinces=cfg.boundaries.provinces)
     
     grid = SquareMetersGrid(
         tile_resolution_in_meters=cfg.grid.tile_resolution_in_meters,
