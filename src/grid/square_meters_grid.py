@@ -4,14 +4,14 @@ from shapely.geometry import box
 
 
 class SquareMetersGrid:
-    def __init__(self, tile_resolution_in_meters: int, tile_length_in_pixels: int):
-        self.tile_resolution_in_meters = tile_resolution_in_meters
-        self.tile_length_in_pixels = tile_length_in_pixels
+    def __init__(self, pixel_size_in_meters: int, tile_size_in_pixels: int):
+        self.pixel_size_in_meters = pixel_size_in_meters
+        self.tile_size_in_pixels = tile_size_in_pixels
     
     def get_tiles(self, geometry: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         minx, miny, maxx, maxy = geometry.total_bounds
 
-        self.tile_size_in_meters = self.tile_resolution_in_meters *  self.tile_length_in_pixels
+        self.tile_size_in_meters = self.pixel_size_in_meters *  self.tile_size_in_pixels
 
         x_coords = np.arange(minx, maxx, self.tile_size_in_meters)
         y_coords = np.arange(miny, maxy, self.tile_size_in_meters)

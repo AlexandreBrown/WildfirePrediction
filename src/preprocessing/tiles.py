@@ -32,6 +32,7 @@ class Tiles:
         self.output_folder.mkdir(parents=True, exist_ok=True)
     
     def generate_preprocessed_tiles(self) -> list:
+        logging.info("Generating preprocessed tiles...")
         merged_raw_tiles_ds = self.merge_raw_tiles()
         reprojected_ds = self.resize_pixels_and_reproject(merged_raw_tiles_ds)
         tiles_paths = self.make_tiles(reprojected_ds)
@@ -84,7 +85,6 @@ class Tiles:
         output_files_paths = []
         for x_offset in range(0, input_ds.RasterXSize, self.tile_size_in_pixels):
             for y_offset in range(0, input_ds.RasterYSize, self.tile_size_in_pixels):
-                logging.info(f"Generating tile for x_offset: {x_offset}, y_offset: {y_offset}")
                 
                 tile_nc_file = tile_folder / f"tile_{x_offset}_{y_offset}.nc"
                 

@@ -1,14 +1,14 @@
 periods:
     year_start_inclusive: 2001
-    year_end_inclusive: 2001
+    year_end_inclusive: 2005
     month_start_inclusive: 1
     month_end_inclusive: 12
 boundaries:
     output_path: "data/canada_boundary/"
     provinces: ["NL", "PE", "NS", "NB", "QC", "ON", "MB", "SK", "AB", "BC"]
 grid:
-    tile_resolution_in_meters: 500
-    tile_length_in_pixels: 512
+    pixel_size_in_meters: 500
+    tile_size_in_pixels: 512
 sources:
     era5:
         product_type: "reanalysis"
@@ -41,4 +41,4 @@ sources:
 logs:
     nasa_earth_data_logs_folder_path: "logs/download_data/20240711-081839/"
 outputs:
-    data_output_base_path: "data/raw/"
+    data_output_base_path: "data/download/"

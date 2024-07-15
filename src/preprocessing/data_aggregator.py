@@ -178,6 +178,7 @@ class DataAggregator:
         return output_file_path
         
     def aggregate_datasets(self, input_datasets: list, output_band: gdal.Band, on_band_read, get_final_output_band_data):
+        
         for input_dataset in input_datasets:
             band_data = input_dataset.GetRasterBand(1).ReadAsArray()
             on_band_read(band_data=band_data)

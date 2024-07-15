@@ -1,7 +1,5 @@
 import getpass
 import hydra
-import hashlib
-import json
 import os
 import cdsapi
 import shutil
@@ -36,9 +34,7 @@ def download_era5_data(cfg: DictConfig):
                     "month": f"{month:02}",
                 }
                 
-                request_hash = hash_request(era5_request_json)
-                
-                output_path = data_output_base_path / Path(f"{year}") / Path(f"{month}") / Path(f"era5_{cfg.sources.era5.product_type}_{variable}_{request_hash}") / Path("data.nc")
+                output_path = data_output_base_path / Path(f"{year}") / Path(f"{month}") / Path(f"era5_{cfg.sources.era5.product_type}_{variable}") / Path("data.nc")
                 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 
@@ -50,8 +46,6 @@ def download_era5_data(cfg: DictConfig):
                 
                 shutil.move(output_path.name, output_path)
 
-def hash_request(request: dict) -> str:
-    return hashlib.md5(json.dumps(request).encode()).hexdigest()
 
 def download_nasa_earth_data(cfg: DictConfig):
     nasa_earth_data_api = NasaEarthDataApi()
@@ -77,8 +71,8 @@ def download_nasa_earth_data(cfg: DictConfig):
     canada.load(provinces=cfg.boundaries.provinces)
     
     grid = SquareMetersGrid(
-        tile_resolution_in_meters=cfg.grid.tile_resolution_in_meters,
-        tile_length_in_pixels=cfg.grid.tile_length_in_pixels,    
+        pixel_size_in_meters=cfg.grid.pixel_size_in_meters,
+        tile_size_in_pixels=cfg.grid.tile_size_in_pixels,    
     )
     print("Tiling boundary...")
     tiles = grid.get_tiles(canada.boundary)
@@ -89,8 +83,8 @@ def download_nasa_earth_data(cfg: DictConfig):
         year_end_inclusive=cfg.periods.year_end_inclusive,
         month_start_inclusive=cfg.periods.month_start_inclusive,
         month_end_inclusive=cfg.periods.month_end_inclusive,
-        tile_resolution_in_meters=cfg.grid.tile_resolution_in_meters,
-        tile_length_in_pixels=cfg.grid.tile_length_in_pixels,
+        pixel_size_in_meters=cfg.grid.pixel_size_in_meters,
+        tile_size_in_pixels=cfg.grid.tile_size_in_pixels,
         logs_folder_path=cfg.logs.nasa_earth_data_logs_folder_path
     )
     
@@ -124,7 +118,7 @@ def select_nasa_earth_data_products_layers(nasa_earth_data_api: NasaEarthDataApi
 
 
 @hydra.main(version_base=None, config_path="config", config_name="download_data")
-def main(cfg : DictConfig) -> None:
+def main(cfg : DictConfig):
     if "era5" in cfg.sources:
         print("Downloading ERA5 data...")
         download_era5_data(cfg)

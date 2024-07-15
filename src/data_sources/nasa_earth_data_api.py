@@ -107,8 +107,8 @@ class NasaEarthDataApi:
         year_end_inclusive: int,
         month_start_inclusive: int,
         month_end_inclusive: int,
-        tile_resolution_in_meters: int,
-        tile_length_in_pixels: int,
+        pixel_size_in_meters: int,
+        tile_size_in_pixels: int,
         logs_folder_path: Optional[str] = None
     ):  
         tiles = tiles.to_crs(epsg=4326)
@@ -139,7 +139,7 @@ class NasaEarthDataApi:
                     
                     self.wait_until_tasks_limit_not_reached()
 
-                    task = self.create_task(year, month, tile_resolution_in_meters, tile_length_in_pixels, product, layer, tiles_json)
+                    task = self.create_task(year, month, pixel_size_in_meters, tile_size_in_pixels, product, layer, tiles_json)
                     
                     if self.products[product]['TemporalGranularity'] == 'Static':
                         task['params']['dates'] = [{
@@ -188,14 +188,14 @@ class NasaEarthDataApi:
         self,
         year: int,
         month: int,
-        tile_resolution_in_meters: int,
-        tile_length_in_pixels: int,
+        pixel_size_in_meters: int,
+        tile_size_in_pixels: int,
         product: str,
         layer: str,
         tiles_json: dict
     ) -> dict:
         task_type = "area" # 'area', 'point'
-        base_task_name = f"canada_{tile_resolution_in_meters}m_{tile_length_in_pixels}px_{product}_{layer}".replace(".", "_").replace(" ", "_").replace("__","_")
+        base_task_name = f"canada_{pixel_size_in_meters}m_{tile_size_in_pixels}px_{product}_{layer}".replace(".", "_").replace(" ", "_").replace("__","_")
         if self.products[product]['TemporalGranularity'] == 'Static':
             task_name = base_task_name
         else:
@@ -299,12 +299,11 @@ class NasaEarthDataApi:
         layer = task_info['layer'].replace(".", "_").replace(" ", "_").replace("__", "_")
         year = task_info['year']
         month = task_info['month']
-        task_hash = task_info['task_hash']
         
         if self.products[task_info['product']]['TemporalGranularity'] == 'Static':
-            output_path = data_output_base_path / "static_data" / f"{product}_{layer}_{task_hash}" / "raw_tiles"
+            output_path = data_output_base_path / "static_data" / f"{product}_{layer}"
         else:
-            output_path = data_output_base_path / f"{year}" / f"{month}" / f"{product}_{layer}_{task_hash}" / "raw_tiles"
+            output_path = data_output_base_path / f"{year}" / f"{month}" / f"{product}_{layer}"
         
         output_path.mkdir(parents=True, exist_ok=True)
         
