@@ -1,5 +1,7 @@
 import getpass
 import hydra
+import hashlib
+import json
 import os
 import cdsapi
 import shutil
@@ -25,25 +27,31 @@ def download_era5_data(cfg: DictConfig):
             for variable in cfg.sources.era5.variables:
                 print(f"Variable {variable}...")
                 
-                output_path = data_output_base_path / Path(f"{year}") / Path(f"{month}") / Path(f"era5_{cfg.sources.era5.product_type}_{variable}") / Path("data.nc")
+                era5_request_json = {
+                    "product_type": cfg.sources.era5.product_type,
+                    "format": "netcdf",
+                    "variable": variable,
+                    "area": [63, -140, 40, -50],
+                    "year": f"{year}",
+                    "month": f"{month:02}",
+                }
+                
+                request_hash = hash_request(era5_request_json)
+                
+                output_path = data_output_base_path / Path(f"{year}") / Path(f"{month}") / Path(f"era5_{cfg.sources.era5.product_type}_{variable}_{request_hash}") / Path("data.nc")
                 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 
                 era5_client.retrieve(
                     cfg.sources.era5.dataset,
-                    {
-                        "product_type": cfg.sources.era5.product_type,
-                        "format": "netcdf",
-                        "variable": variable,
-                        "area": [63, -140, 40, -50],
-                        "year": f"{year}",
-                        "month": f"{month:02}",
-                    }, 
+                    era5_request_json, 
                     output_path.name
                 )
                 
                 shutil.move(output_path.name, output_path)
 
+def hash_request(request: dict) -> str:
+    return hashlib.md5(json.dumps(request).encode()).hexdigest()
 
 def download_nasa_earth_data(cfg: DictConfig):
     nasa_earth_data_api = NasaEarthDataApi()
