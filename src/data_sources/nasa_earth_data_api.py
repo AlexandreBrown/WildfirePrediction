@@ -110,7 +110,8 @@ class NasaEarthDataApi:
         tile_size_in_pixels: int,
         logs_folder_path: Optional[str] = None
     ):  
-        tiles = tiles.to_crs(epsg=4326)
+        nasa_earth_data_expected_epsg = 4326
+        tiles = tiles.to_crs(epsg=nasa_earth_data_expected_epsg)
         tiles_json = json.loads(tiles.to_json())
         
         if logs_folder_path is not None:
@@ -176,12 +177,12 @@ class NasaEarthDataApi:
     def wait_until_tasks_limit_not_reached(self):
         tasks_limit_reached = True
         while tasks_limit_reached:
-            logging.info("Waiting for tasks to complete...")
+            logging.info("Making sure pending tasks limit is not reached...")
             tasks_response = requests.get(f"{self.base_url}task", headers=self.auth_header).json()
             nb_tasks_not_done = len([t for t in tasks_response if t['status'] != 'done'])
-            tasks_limit_reached = nb_tasks_not_done >= 1000
+            tasks_limit_reached = nb_tasks_not_done >= 750
             if tasks_limit_reached:
-                time.sleep(60)
+                time.sleep(600)
     
     def create_task(
         self,
@@ -235,9 +236,21 @@ class NasaEarthDataApi:
         self,
         task: dict
     ) -> str:
-        task_response = requests.post(f"{self.base_url}task", json=task, headers=self.auth_header)
-        logging.info(f"Status Code: {task_response.status_code} {task_response.reason} {task_response.text}")
-        task_id = task_response.json()['task_id']
+        max_attempts = 25
+        attempt = 0
+        while attempt <= max_attempts:
+            try:
+                task_response = requests.post(f"{self.base_url}task", json=task, headers=self.auth_header)
+                logging.info(f"Status Code: {task_response.status_code} {task_response.reason} {task_response.text}")
+                task_id = task_response.json()['task_id']
+                break
+            except Exception as e:
+                attempt += 1
+                if attempt > max_attempts:
+                    logging.error(f"Failed to submit task after {max_attempts} attempts!")
+                    raise e
+                logging.info(f"Attempt {attempt} for submitting task failed: {e}. Retrying...")
+                time.sleep(5)
         return task_id
         
     def save_tasks_info(self):
@@ -316,7 +329,7 @@ class NasaEarthDataApi:
         await asyncio.gather(*tasks)
     
     async def download_file(self, asyncio_semaphore, session, task_id: str, file_id, file_name: str, output_path: Path):
-        max_attempts = 10
+        max_attempts = 25
         attempt = 0
 
         while attempt <= max_attempts:
@@ -340,7 +353,7 @@ class NasaEarthDataApi:
             except Exception as e:
                 attempt += 1
                 if attempt > max_attempts:
-                    logging.error(f"Failed to download {file_name} after {max_attempts} attempts")
+                    logging.error(f"Failed to download {file_name} after {max_attempts} attempts!")
                     raise e
                 logging.info(f"Attempt {attempt} for {file_name} failed: {e}. Retrying...")
                 await asyncio.sleep(5)
