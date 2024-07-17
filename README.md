@@ -145,7 +145,9 @@ Here is an overview of the various steps (at a high level) :
 
 <img src="doc/images/generate_dataset_overview.png" height="600px"/>  
 
-Note that this step outputs tile grids (big tiles) and these tiles are larger than the tiles that the model will take as input. This was done to ensure that we split our train/val data in a way that avoids leakage. Smaller tiles (eg: 128x128) will be created during training based on the tile grids.   
+Note that this step outputs tile grids (big tiles) and these tiles are larger than the tiles that the model will take as input. This was done to ensure that we split our train/val data in a way that avoids leakage. Smaller tiles (eg: 128x128) will be created during training based on the tile grids.  
+Each tile grid is of dimension C x H x W where = C the number of different sources of data (eg: NDVI, EVI, LAI, ...), H = 512 and W = 512.  
+So each tile grid represents the data inputs stacked for 1 year for the area delimited by the 512x512 pixels area. 
 
 1. Edit the configuration (or leave as-is) under `config/generate_dataset.yaml`.   
     - One can change the pixel size resolution (eg: 250 meters), tile size in pixels (eg: 512x512).
