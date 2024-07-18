@@ -1,13 +1,13 @@
 # Wildfire Prediction
 Canada Wildfire Prediction Using Deep Learning.  
-The objective is to predict the future fire occurrences for the next years given various features from the past years.
+The objective is to predict the future fire occurrences for the next years given various inputs from the past years and current years (current years only for data that is not impacted by fires).
 
 # Data  
 ## Boundaries
 - [Canada Boundary Shapefile](https://open.canada.ca/data/en/dataset/a883eb14-0c0e-45c4-b8c4-b54c4a819edb)  
 
 ## Data  
-The model receives as input the following data (we stack the data for the 5 years prior).  
+The model receives as input the following data (we stack the data from multiple years).  
 ### Dynamic  
 Dynamic data is data that changes with time. This data is updated on a daily/weekly/bi-weekly/monthly/yearly basis (depending on which data).
 #### Vegetation
@@ -78,7 +78,7 @@ Static data is the data that does not change over time or for which we only have
 
 ## Target  
 - [NBAC Canada Fire Polygons](https://cwfis.cfs.nrcan.gc.ca/datamart)
-- Currently the model is trained to predict the future wildfire occurrences for the next 5 years.  
+- Currently the model is trained to predict the future wildfire occurrences for the next X years.  
 
 # End-To-End Pipeline
 ## Prerequisites
