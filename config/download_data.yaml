@@ -1,8 +1,8 @@
 periods:
-    year_start_inclusive: 2001
-    year_end_inclusive: 2005
-    month_start_inclusive: 1
-    month_end_inclusive: 12
+    year_start_inclusive: 2000
+    year_end_inclusive: 2023
+    month_start_inclusive: 5
+    month_end_inclusive: 10
 boundaries:
     output_path: "data/canada_boundary/"
     provinces: ["NL", "PE", "NS", "NB", "QC", "ON", "MB", "SK", "AB", "BC"]
