@@ -23,7 +23,6 @@ def main(cfg : DictConfig):
         tile_size_in_pixels=cfg.resolution.tile_size_in_pixels
     )
     
-    
     dynamic_sources = [ (source_name, source_values) for (source_name, source_values) in cfg.sources.get("dynamic", {}).items() ]
     static_sources = [ (source_name, source_values) for (source_name, source_values) in cfg.sources.get("static", {}).items() ]
     

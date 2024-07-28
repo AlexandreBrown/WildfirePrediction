@@ -73,7 +73,7 @@ class DataAggregator:
 
         driver = gdal.GetDriverByName("netCDF")
         output_path.mkdir(parents=True, exist_ok=True)
-        output_file_path = output_path / f"{output_file_name_without_extension}_aggregated.nc"
+        output_file_path = output_path / f"{output_file_name_without_extension}.nc"
         output_dataset = driver.Create(
             str(output_file_path.resolve()), 
             xsize=xsize, 

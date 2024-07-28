@@ -1,7 +1,7 @@
 periods:
   target_year_start_inclusive: 2001
   target_year_end_inclusive: 2002
-  month_start_inclusive: 5
+  month_start_inclusive: 9
   month_end_inclusive: 10
   target_period_length_in_years: 1
   input_data_affected_by_fires_period_length_in_years: 1
@@ -42,7 +42,7 @@ sources:
       #   aggregate_by: "average"
       #   data_type: "continuous"
       #   is_affected_by_fires: false
-      # era5_reanalysis_net_solar_radiation:
+      # era5_reanalysis_surface_net_solar_radiation:
       #   layer: ""
       #   aggregate_by: "average"
       #   data_type: "continuous"
@@ -57,11 +57,11 @@ sources:
       #   aggregate_by: "average"
       #   data_type: "continuous"
       #   is_affected_by_fires: false
-      MOD13Q1_061__250m_16_days_NDVI:
-        layer: "_250m_16_days_NDVI"
-        aggregate_by: "average"
-        data_type: "continuous"
-        is_affected_by_fires: true
+      # MOD13Q1_061__250m_16_days_NDVI:
+      #   layer: "_250m_16_days_NDVI"
+      #   aggregate_by: "average"
+      #   data_type: "continuous"
+      #   is_affected_by_fires: true
     #   MOD13Q1_061__250m_16_days_EVI:
     #     layer: "_250m_16_days_EVI"
     #     aggregate_by: "average"
@@ -97,7 +97,7 @@ sources:
     #     aggregate_by: "max"
     #     data_type: "categorical"
     #     is_affected_by_fires: true
-    # static:
-    #   NASADEM_NC_001_NASADEM_HGT:
-    #     layer: "NASADEM_HGT"
-    #     data_type: "continuous"
+    static:
+      NASADEM_NC_001_NASADEM_HGT:
+        layer: ""
+        data_type: "continuous"
