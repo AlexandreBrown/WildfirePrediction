@@ -16,6 +16,8 @@ from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 
+QA_FILE_NAME_CONTENT = '_NUMNC'
+
 class NasaEarthDataApi:
     def __init__(self):
         self.base_url = 'https://appeears.earthdatacloud.nasa.gov/api/'
@@ -340,18 +342,20 @@ class NasaEarthDataApi:
                 async with asyncio_semaphore:
                     async with session.get(f"{self.base_url}bundle/{task_id}/{file_id}", headers=self.auth_header) as dl:
                         dl.raise_for_status()
-                        if file_name.endswith('.tif'):
-                            filename = file_name.split('/')[1]
-                        else:
-                            filename = file_name
+                        
+                        if QA_FILE_NAME_CONTENT not in file_name:
+                            if file_name.endswith('.tif'):
+                                filename = file_name.split('/')[1]
+                            else:
+                                filename = file_name
 
-                        filepath = output_path / Path(filename)
-                        with open(filepath, 'wb') as f:
-                            while True:
-                                chunk = await dl.content.read(8192)
-                                if not chunk:
-                                    break
-                                f.write(chunk)
+                            filepath = output_path / Path(filename)
+                            with open(filepath, 'wb') as f:
+                                while True:
+                                    chunk = await dl.content.read(8192)
+                                    if not chunk:
+                                        break
+                                    f.write(chunk)
                 break
             except Exception as e:
                 attempt += 1
