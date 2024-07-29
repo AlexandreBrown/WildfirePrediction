@@ -5,12 +5,14 @@ import geopandas as gpd
 import multiprocessing as mp
 import os
 from boundaries.canada_boundary import CanadaBoundary
+from data_sources.nbac_fire_data_source import NbacFireDataSource
 from grid.square_meters_grid import SquareMetersGrid
 from preprocessing.data_aggregator import DataAggregator
 from preprocessing.tiles import Tiles
 from pathlib import Path
 from collections import defaultdict
 from osgeo import gdal
+from targets.fire_occurrence_target import FireOccurrenceTarget
 
 
 logging.basicConfig(level=logging.INFO)
@@ -22,12 +24,14 @@ class DatasetGenerator:
         boundary: CanadaBoundary, 
         grid: SquareMetersGrid,
         input_folder_path: Path,
-        output_folder_path: Path
+        output_folder_path: Path,
+        debug: bool
     ):
         self.boundary = boundary
         self.grid = grid
         self.input_folder_path = input_folder_path
         self.output_folder_path = output_folder_path
+        self.debug = debug
         
     def generate(
         self,
@@ -48,29 +52,43 @@ class DatasetGenerator:
         dataset_folder_path.mkdir(parents=True, exist_ok=True)
 
         try:
-            self.generate_data(dataset_folder_path, big_tiles, dynamic_sources, static_sources, periods_config, resolution_config, projections_config)
+            tmp_path = dataset_folder_path / Path("tmp")
+            tmp_path.mkdir(parents=True, exist_ok=True)
+            
+            target_years_ranges = self.generate_target_years_ranges(periods_config)
+        
+            logging.info(f"Target years ranges: {target_years_ranges}")
+            
+            self.generate_data(dataset_folder_path, tmp_path, big_tiles, dynamic_sources, static_sources, periods_config, resolution_config, projections_config, target_years_ranges)
+            
+            self.generate_targets(dataset_folder_path, target_years_ranges, resolution_config, projections_config)
+            
+            if not self.debug:
+                logging.info("Cleaning up tmp folder...")
+                shutil.rmtree(tmp_path)
         except BaseException as e:
             logging.error(f"Error: {e}")
             shutil.rmtree(dataset_folder_path)
             raise e
         
-        # self.generate_targets(target_years_range_reversed)
-            
     def generate_data(
         self, 
         dataset_folder_path: Path, 
+        tmp_path: Path,
         big_tiles: gpd.GeoDataFrame, 
         dynamic_sources: list, 
         static_sources: list, 
         periods_config: dict, 
         resolution_config: dict, 
-        projections_config: dict
+        projections_config: dict,
+        target_years_ranges: list
     ):
+        logging.info("Generating data...")
+        
         max_nb_processes = max(1, len(os.sched_getaffinity(0)) - 1)
         
         logging.info(f"Max nb processes: {max_nb_processes}")
         
-        tmp_path = dataset_folder_path / Path("tmp")
         processed_data_folder_path = tmp_path / Path("processed_data")
         
         processed_data_folder_path.mkdir(parents=True, exist_ok=True)
@@ -80,10 +98,6 @@ class DatasetGenerator:
         sources_yearly_data_index = self.process_static_data(processed_data_folder_path, sources_yearly_data_index, big_tiles, static_sources, resolution_config, projections_config)
 
         sources_yearly_data_index, tiles_names = self.delete_orphan_tiles(sources_yearly_data_index)
-
-        target_years_ranges = self.generate_target_years_ranges(periods_config)
-        
-        logging.info(f"Target years ranges: {target_years_ranges}")
 
         self.stack_data(sources_yearly_data_index, tiles_names, dataset_folder_path, periods_config, resolution_config, dynamic_sources, static_sources, target_years_ranges)
 
@@ -184,6 +198,7 @@ class DatasetGenerator:
         return target_year_ranges
 
     def delete_orphan_tiles(self, sources_yearly_data_index) -> tuple:
+        # TODO FIX THIS : Why SRTM data gets massively deleted?
         tiles_count = {}
         for year, year_data in sources_yearly_data_index.items():
             for data_name, tiles_paths in year_data.items():
@@ -193,7 +208,7 @@ class DatasetGenerator:
                         tiles_count[tile_name] = 1
                     else:
                         tiles_count[tile_name] += 1
-
+        
         intersection_count = max(tiles_count.values())
         
         logging.info(f"intersection_count: {intersection_count}")
@@ -208,7 +223,11 @@ class DatasetGenerator:
                         sources_yearly_data_index[year][data_name].remove(tile_path)
                         logging.info(f"Deleted {tile_path}")
 
-        return sources_yearly_data_index, tiles_count.keys()
+        tiles_names = tiles_count.keys()
+        
+        logging.info(f"Number of tiles: {len(tiles_names)}")
+
+        return sources_yearly_data_index, tiles_names
 
     def process_static_data(
         self, 
@@ -428,5 +447,36 @@ class DatasetGenerator:
         
         return tiles_path, tiles_output_path
     
-    def generate_targets(self):
-        pass
+    def generate_targets(self, dataset_folder_path: Path, target_years_ranges: list, resolution_config: dict, projections_config: dict):
+        logging.info("Generating targets...")
+        
+        fire_data_source = NbacFireDataSource(Path(self.input_folder_path))
+        
+        target_output_folder_path = dataset_folder_path / Path("targets")
+        target_output_folder_path.mkdir(parents=True, exist_ok=True)
+            
+        target = FireOccurrenceTarget(
+            fire_data_source=fire_data_source,
+            canada=self.boundary,
+            resolution_in_meters=resolution_config['pixel_size_in_meters'],
+            target_epsg_code=projections_config['target_srs'],
+            output_folder_path=target_output_folder_path
+        )
+        
+        for target_years_range in target_years_ranges:
+            logging.info(f"Generating targets for target years range: [{target_years_range[0]}, {target_years_range[-1]}]...")
+            year_range_file_path = target.generate_targets(target_years_range, save_individual_years=False)[0]
+            tiles = Tiles(
+                raw_tiles_folder=year_range_file_path.parent,
+                layer_name="",
+                tile_size_in_pixels=resolution_config['tile_size_in_pixels'],
+                pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
+                output_folder=year_range_file_path.parent,
+                big_tiles=self.boundary.boundary,
+                source_srs=projections_config['source_srs'],
+                target_srs=projections_config['target_srs'],
+                resample_algorithm_continuous=resolution_config['resample_algorithm_continuous'],
+                resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
+            )
+            
+            tiles.generate_preprocessed_tiles(data_type="categorical")

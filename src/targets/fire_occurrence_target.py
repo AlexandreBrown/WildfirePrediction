@@ -14,19 +14,16 @@ class FireOccurrenceTarget:
         canada: CanadaBoundary,
         resolution_in_meters: int,
         target_epsg_code: int = 3978,
-        raw_data_output_folder_path: Path = Path("../data/raw/"),
-        target_data_output_folder_path: Path = Path("../data/target/")
+        output_folder_path: Path = Path("../data/target/")
     ):
         self.fire_data_source = fire_data_source
         self.canada = canada
         self.resolution_in_meters = resolution_in_meters
         self.target_epsg_code = target_epsg_code
-        self.raw_data_output_folder_path = raw_data_output_folder_path
-        self.raw_data_output_folder_path.mkdir(parents=True, exist_ok=True)
-        self.target_data_output_folder_path = target_data_output_folder_path
-        self.target_data_output_folder_path.mkdir(parents=True, exist_ok=True)
+        self.output_folder_path = output_folder_path
+        self.output_folder_path.mkdir(parents=True, exist_ok=True)
     
-    def generate_targets(self, years: range) -> list:
+    def generate_targets(self, years: range, save_individual_years: bool = False) -> list:
         merged_raster = None
         
         for year in years:
@@ -44,14 +41,18 @@ class FireOccurrenceTarget:
 
             merged_raster = np.maximum(merged_raster, target_data, dtype=np.uint8)
             
-            target_file_path.unlink()
+            shutil.rmtree(target_file_path.parent)
 
         merged_dataset = self.create_raster_from_array(merged_raster, geotransform, target_srs)
 
         merged_output_paths = []
         
-        for year in years:
-            merged_output_path = self.save_target(merged_dataset, year, self.target_data_output_folder_path)
+        if save_individual_years:
+            for year in years:
+                merged_output_path = self.save_target(merged_dataset, str(year), self.output_folder_path)
+                merged_output_paths.append(merged_output_path)
+        else:
+            merged_output_path = self.save_target(merged_dataset, f"{years[0]}_{years[-1]}", self.output_folder_path)
             merged_output_paths.append(merged_output_path)
             
         return merged_output_paths
@@ -80,7 +81,7 @@ class FireOccurrenceTarget:
         
         target_dataset = self.burn_fire_polygons_to_raster(empty_canada_raster, fire_polygons_shp_path)
         
-        target_file_path = self.save_target(target_dataset, year, self.raw_data_output_folder_path)
+        target_file_path = self.save_target(target_dataset, year, self.output_folder_path)
         
         shutil.rmtree(fire_polygons_shp_path.parent)
         
@@ -90,7 +91,7 @@ class FireOccurrenceTarget:
         fire_polygons = self.fire_data_source.download(year)
         fire_polygons = fire_polygons.to_crs(epsg=self.target_epsg_code)
         
-        fire_polygons_shp_path = self.raw_data_output_folder_path / "tmp"
+        fire_polygons_shp_path = self.output_folder_path / "tmp"
         fire_polygons_shp_path.mkdir(parents=True, exist_ok=True)
         fire_polygons_shp_path = fire_polygons_shp_path / f"fire_occurrence_{year}.shp"
         fire_polygons.to_file(fire_polygons_shp_path, driver='ESRI Shapefile')
@@ -126,7 +127,7 @@ class FireOccurrenceTarget:
         
         return empty_raster
     
-    def save_target(self, target_dataset: gdal.Dataset, year: int, base_path: Path) -> Path:
+    def save_target(self, target_dataset: gdal.Dataset, year: str, base_path: Path) -> Path:
         driver = gdal.GetDriverByName('NetCDF')
         target_file_path = base_path / Path(f"{year}") / Path("fire_occurrences.nc")
         target_file_path.parent.mkdir(parents=True, exist_ok=True)

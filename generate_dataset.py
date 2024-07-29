@@ -26,7 +26,7 @@ def main(cfg : DictConfig):
     dynamic_sources = [ (source_name, source_values) for (source_name, source_values) in cfg.sources.get("dynamic", {}).items() ]
     static_sources = [ (source_name, source_values) for (source_name, source_values) in cfg.sources.get("static", {}).items() ]
     
-    dataset_generator = DatasetGenerator(boundary, grid, input_folder_path=Path(cfg.paths.input_folder_path), output_folder_path=Path(cfg.paths.output_folder_path))
+    dataset_generator = DatasetGenerator(boundary, grid, input_folder_path=Path(cfg.paths.input_folder_path), output_folder_path=Path(cfg.paths.output_folder_path), debug=cfg.debug)
     
     dataset_generator.generate(
         dynamic_sources=dynamic_sources,

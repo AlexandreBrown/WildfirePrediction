@@ -6,13 +6,13 @@ import geopandas as gpd
 
 
 class NbacFireDataSource:
-    def __init__(self, raw_data_path: Path = Path("../data/raw/")):
-        self.raw_data_path = raw_data_path
-        self.raw_data_path.mkdir(parents=True, exist_ok=True)
+    def __init__(self, download_data_path: Path = Path("../data/raw/")):
+        self.download_data_path = download_data_path
+        self.download_data_path.mkdir(parents=True, exist_ok=True)
     
     def download(self, year: int) -> gpd.GeoDataFrame:
         
-        output_path = self.raw_data_path / Path(f"{year}") / Path("nbac_fire_polygons/")
+        output_path = self.download_data_path / Path(f"{year}") / Path("nbac_fire_polygons/")
         output_path.mkdir(parents=True, exist_ok=True)
         
         if len(list(output_path.glob("./*.shp"))) == 0:
