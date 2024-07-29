@@ -10,6 +10,7 @@ from preprocessing.data_aggregator import DataAggregator
 from preprocessing.tiles import Tiles
 from pathlib import Path
 from collections import defaultdict
+from osgeo import gdal
 
 
 logging.basicConfig(level=logging.INFO)
@@ -47,10 +48,7 @@ class DatasetGenerator:
         dataset_folder_path.mkdir(parents=True, exist_ok=True)
 
         try:
-            tmp_path = dataset_folder_path / Path("tmp")
-            tmp_path.mkdir(parents=True, exist_ok=True)
-        
-            self.generate_data(tmp_path, big_tiles, dynamic_sources, static_sources, periods_config, resolution_config, projections_config)
+            self.generate_data(dataset_folder_path, big_tiles, dynamic_sources, static_sources, periods_config, resolution_config, projections_config)
         except BaseException as e:
             logging.error(f"Error: {e}")
             shutil.rmtree(dataset_folder_path)
@@ -60,7 +58,7 @@ class DatasetGenerator:
             
     def generate_data(
         self, 
-        tmp_path: Path, 
+        dataset_folder_path: Path, 
         big_tiles: gpd.GeoDataFrame, 
         dynamic_sources: list, 
         static_sources: list, 
@@ -72,15 +70,145 @@ class DatasetGenerator:
         
         logging.info(f"Max nb processes: {max_nb_processes}")
         
+        tmp_path = dataset_folder_path / Path("tmp")
         processed_data_folder_path = tmp_path / Path("processed_data")
+        
+        processed_data_folder_path.mkdir(parents=True, exist_ok=True)
         
         sources_yearly_data_index = self.process_dynamic_data(processed_data_folder_path, dynamic_sources, big_tiles, periods_config, resolution_config, projections_config, max_nb_processes)
 
-        self.process_static_data(processed_data_folder_path, sources_yearly_data_index, big_tiles, static_sources, resolution_config, projections_config)
+        sources_yearly_data_index = self.process_static_data(processed_data_folder_path, sources_yearly_data_index, big_tiles, static_sources, resolution_config, projections_config)
 
-        # TODO : Delete tiles that are not present for all sources and years
+        sources_yearly_data_index, tiles_names = self.delete_orphan_tiles(sources_yearly_data_index)
 
-        # self.stack_data(dynamic_processed_data_paths, static_processed_data_paths)
+        target_years_ranges = self.generate_target_years_ranges(periods_config)
+        
+        logging.info(f"Target years ranges: {target_years_ranges}")
+
+        self.stack_data(sources_yearly_data_index, tiles_names, dataset_folder_path, periods_config, resolution_config, dynamic_sources, static_sources, target_years_ranges)
+
+    def stack_data(self, sources_yearly_data_index: dict, tiles_names: list, dataset_folder_path: Path, periods_config: dict, resolution_config: dict, dynamic_sources: list, static_sources: list, target_years_ranges: list):
+        logging.info("Stacking data...")
+        
+        for target_years_range in target_years_ranges:
+            
+            logging.info(f"Stacking data for target years range: [{target_years_range[0]}, {target_years_range[-1]}]...")
+            
+            stacked_input_data_folder_path = dataset_folder_path / Path("input_data") / Path(f"{target_years_range[0]}_{target_years_range[-1]}")
+            
+            stacked_input_data_folder_path.mkdir(parents=True, exist_ok=True)
+            
+            logging.info(f"Stacked input data folder path: {str(stacked_input_data_folder_path)}")
+            
+            for tile_name in tiles_names:
+                                
+                number_of_bands = 0
+                
+                dynamic_data_to_stack = []
+                
+                for dynamic_source_name, dynamic_source_values in dynamic_sources:
+                    is_affected_by_fires = dynamic_source_values['is_affected_by_fires']
+                    dynamic_source_years_range = self.get_data_years_range(target_years_range, periods_config, is_affected_by_fires)
+                    number_of_bands += len(dynamic_source_years_range)
+                    dynamic_data_to_stack.append((dynamic_source_name, dynamic_source_years_range, dynamic_source_values['layer']))
+                
+                for static_source_name, _ in static_sources:
+                    number_of_bands += 1
+            
+                x_size = resolution_config['tile_size_in_pixels']
+                y_size = resolution_config['tile_size_in_pixels']
+                data_type = gdal.GDT_Float32
+
+                driver = gdal.GetDriverByName('netCDF')
+                stacked_tile_data_output_path = stacked_input_data_folder_path / Path(f"{tile_name}.nc")
+                stacked_tile_ds = driver.Create(stacked_tile_data_output_path, x_size, y_size, number_of_bands, data_type)
+        
+                band_index = 1
+                
+                for dynamic_source_name, dynamic_source_years_range, dynamic_source_layer in dynamic_data_to_stack:
+                    for year in dynamic_source_years_range:
+                        year_data_tile_paths = sources_yearly_data_index[year][dynamic_source_name]
+                        
+                        output_band = stacked_tile_ds.GetRasterBand(band_index)
+                        
+                        for year_data_tile_path in year_data_tile_paths:
+                            if year_data_tile_path.stem == tile_name:
+                                file_path = f"NETCDF:\"{year_data_tile_path.resolve()}\"{':' + dynamic_source_layer if dynamic_source_layer != '' else ''}"
+                                input_ds = gdal.Open(file_path)
+                                input_band = input_ds.GetRasterBand(1)
+                                input_band_data = input_band.ReadAsArray()
+                                output_band.WriteArray(input_band_data)
+                                output_band.FlushCache()
+                                break
+                        
+                        band_index += 1
+                
+                for static_source_name, static_source_values in static_sources:
+                    output_band = stacked_tile_ds.GetRasterBand(band_index)
+                    static_data_tile_paths = sources_yearly_data_index[target_years_range[0]][static_source_name]
+                    layer = static_source_values['layer']
+                    
+                    for tile_path in static_data_tile_paths:
+                        if tile_path.stem == tile_name:
+                            file_path = f"NETCDF:\"{tile_path.resolve()}\"{':' + layer if layer != '' else ''}"
+                            input_ds = gdal.Open(file_path, gdal.GA_ReadOnly)
+                            input_band = input_ds.GetRasterBand(1)
+                            input_band_data = input_band.ReadAsArray()
+                            output_band.WriteArray(input_band_data)
+                            output_band.FlushCache()
+                            break
+                    
+                    band_index += 1    
+
+    def get_data_years_range(self, target_years_range: range, periods_config: dict, is_affected_by_fires: bool) -> tuple:
+        if is_affected_by_fires:
+            year_end_inclusive = target_years_range[0] - 1
+            year_start_inclusive = year_end_inclusive - periods_config['input_data_affected_by_fires_period_length_in_years'] + 1
+        else:
+            year_end_inclusive = target_years_range[-1]
+            year_start_inclusive = target_years_range[0]
+        
+        return year_start_inclusive, year_end_inclusive
+
+    def generate_target_years_ranges(self, periods_config: dict) -> list:
+        target_year_start_inclusive = periods_config['target_year_start_inclusive']
+        target_year_end_inclusive = periods_config['target_year_end_inclusive']
+        target_period_length_in_years = periods_config['target_period_length_in_years']
+        target_year_ranges = []
+        
+        for target_year_start in range(target_year_start_inclusive, target_year_end_inclusive + 1, 1):
+            target_year_end = target_year_start + target_period_length_in_years - 1
+            assert target_year_end <= target_year_end_inclusive, f"Target year end {target_year_end} is greater than target year end inclusive {target_year_end_inclusive}"
+            target_year_ranges.append(range(target_year_start, target_year_end + 1))
+        
+        return target_year_ranges
+
+    def delete_orphan_tiles(self, sources_yearly_data_index) -> tuple:
+        tiles_count = {}
+        for year, year_data in sources_yearly_data_index.items():
+            for data_name, tiles_paths in year_data.items():
+                for tile_path in tiles_paths:
+                    tile_name = tile_path.stem
+                    if tile_name not in tiles_count.keys():
+                        tiles_count[tile_name] = 1
+                    else:
+                        tiles_count[tile_name] += 1
+
+        intersection_count = max(tiles_count.values())
+        
+        logging.info(f"intersection_count: {intersection_count}")
+
+        for year, year_data in sources_yearly_data_index.items():
+            for data_name, tiles_paths in year_data.items():
+                for tile_path in tiles_paths:
+                    tile_name = tile_path.stem
+                    if tiles_count.get(tile_name, 0) < intersection_count:
+                        tile_path.unlink()
+                        tiles_count.pop(tile_name, None)
+                        sources_yearly_data_index[year][data_name].remove(tile_path)
+                        logging.info(f"Deleted {tile_path}")
+
+        return sources_yearly_data_index, tiles_count.keys()
 
     def process_static_data(
         self, 
@@ -90,7 +218,7 @@ class DatasetGenerator:
         static_sources: list, 
         resolution_config: dict, 
         projections_config: dict
-    ) -> list:
+    ) -> dict:
         logging.info(f"Processing {len(static_sources)} static sources...")
         
         for (source_name, source_values) in static_sources:
@@ -116,9 +244,11 @@ class DatasetGenerator:
             )
             
             tiles_paths = tiles.generate_preprocessed_tiles(data_type=source_values['data_type'])
-            
+                        
             for year in sources_yearly_data_index.keys():
                 sources_yearly_data_index[year][source_name] = tiles_paths
+
+        return sources_yearly_data_index
 
     def process_dynamic_data(
         self, 
@@ -146,12 +276,13 @@ class DatasetGenerator:
                 
         for source_yearly_data in sources_yearly_data:
             for year, source_yearly_data in source_yearly_data.items():
-                source_name = list(source_yearly_data.keys())[0]
-                source_yearly_data_paths = list(source_yearly_data.values())[0]
+                current_source_name = list(source_yearly_data.keys())[0]
+                current_source_yearly_data_paths = list(source_yearly_data.values())[0]
+                
                 if formatted_sources_yearly_data_index.get(year) is None:
                     formatted_sources_yearly_data_index[year] = {}
                 
-                formatted_sources_yearly_data_index[year][source_name] = source_yearly_data_paths
+                formatted_sources_yearly_data_index[year][current_source_name] = current_source_yearly_data_paths
         
         return formatted_sources_yearly_data_index
 
@@ -211,11 +342,11 @@ class DatasetGenerator:
     
     def get_dynamic_data_year_periods(self, periods_config: dict, is_affected_by_fires: bool) -> tuple:
         if is_affected_by_fires:
-            year_start_inclusive = periods_config['target_year_start_inclusive'] - periods_config['input_data_affected_by_fires_period_length_in_years']
-            year_end_inclusive = periods_config['target_year_end_inclusive'] - periods_config['target_period_length_in_years']
+            year_end_inclusive = periods_config['target_year_start_inclusive'] - 1
+            year_start_inclusive = year_end_inclusive - periods_config['input_data_affected_by_fires_period_length_in_years'] + 1
         else:
-            year_start_inclusive = periods_config['target_year_start_inclusive']
             year_end_inclusive = periods_config['target_year_end_inclusive']
+            year_start_inclusive = periods_config['target_year_start_inclusive']
         
         return year_start_inclusive, year_end_inclusive
     
@@ -296,23 +427,6 @@ class DatasetGenerator:
         tiles_path = tiles.generate_preprocessed_tiles(data_type=source_values['data_type'])
         
         return tiles_path, tiles_output_path
-    
-    def generate_target_years_ranges(self, periods_config: dict) -> list:
-        target_year_start_inclusive = periods_config['year_start_inclusive']
-        target_year_end_inclusive = periods_config['year_end_inclusive']
-        target_period_length_in_years = periods_config['target_period_length_in_years']
-        target_year_ranges = []
-        
-        for target_year_end in range(target_year_end_inclusive, target_year_start_inclusive - 1, -1):
-            target_year_start = target_year_end - target_period_length_in_years + 1
-            if target_year_start < target_year_start_inclusive:
-                continue
-            target_year_ranges.append(range(target_year_start, target_year_end))
-        
-        return target_year_ranges
-    
-    def stack_data(dynamic_processed_data_paths: list, static_processed_data_paths: list):
-        pass
     
     def generate_targets(self):
         pass
