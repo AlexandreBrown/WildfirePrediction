@@ -61,14 +61,15 @@ class DatasetGenerator:
             
             self.generate_data(dataset_folder_path, tmp_path, big_tiles, dynamic_sources, static_sources, periods_config, resolution_config, projections_config, target_years_ranges)
             
-            self.generate_targets(dataset_folder_path, target_years_ranges, resolution_config, projections_config)
+            self.generate_targets(dataset_folder_path, target_years_ranges, resolution_config, projections_config, big_tiles)
             
             if not self.debug:
                 logging.info("Cleaning up tmp folder...")
                 shutil.rmtree(tmp_path)
         except BaseException as e:
             logging.error(f"Error: {e}")
-            shutil.rmtree(dataset_folder_path)
+            if not self.debug:
+                shutil.rmtree(dataset_folder_path)
             raise e
         
     def generate_data(
@@ -198,36 +199,47 @@ class DatasetGenerator:
         return target_year_ranges
 
     def delete_orphan_tiles(self, sources_yearly_data_index) -> tuple:
-        # TODO FIX THIS : Why SRTM data gets massively deleted?
-        tiles_count = {}
-        for year, year_data in sources_yearly_data_index.items():
-            for data_name, tiles_paths in year_data.items():
-                for tile_path in tiles_paths:
-                    tile_name = tile_path.stem
-                    if tile_name not in tiles_count.keys():
-                        tiles_count[tile_name] = 1
-                    else:
-                        tiles_count[tile_name] += 1
-        
-        intersection_count = max(tiles_count.values())
-        
-        logging.info(f"intersection_count: {intersection_count}")
+        # TODO: Implement this method
+        # data_tiles = defaultdict(lambda: defaultdict(set))
 
-        for year, year_data in sources_yearly_data_index.items():
-            for data_name, tiles_paths in year_data.items():
-                for tile_path in tiles_paths:
-                    tile_name = tile_path.stem
-                    if tiles_count.get(tile_name, 0) < intersection_count:
-                        tile_path.unlink()
-                        tiles_count.pop(tile_name, None)
-                        sources_yearly_data_index[year][data_name].remove(tile_path)
-                        logging.info(f"Deleted {tile_path}")
+        # for year, year_data in sources_yearly_data_index.items():
+        #     for data_name, tiles_paths in year_data.items():
+        #         for tile_path in tiles_paths:
+        #             tile_name = tile_path.stem
+        #             data_tiles[data_name][year].add(tile_name)
 
-        tiles_names = tiles_count.keys()
-        
-        logging.info(f"Number of tiles: {len(tiles_names)}")
+        # all_tiles_sets = []
+        # for data_name, yearly_tiles in data_tiles.items():
+        #     data_name_tiles = set.intersection(*yearly_tiles.values())
+        #     all_tiles_sets.append(data_name_tiles)
 
-        return sources_yearly_data_index, tiles_names
+        # common_tiles = set.intersection(*all_tiles_sets)
+
+        # logging.info(f"Common tiles count: {len(common_tiles)}")
+
+        # deleted_files_count = 0
+        # deleted_data_info = set()
+
+        # for year, year_data in sources_yearly_data_index.items():
+        #     for data_name, tiles_paths in year_data.items():
+        #         for tile_path in list(tiles_paths):  # Convert to list to modify in loop
+        #             tile_name = tile_path.stem
+        #             if tile_name not in common_tiles:
+        #                 try:
+        #                     tile_path.unlink()
+        #                     deleted_files_count += 1
+        #                     deleted_data_info.add((data_name, year))
+        #                 except Exception as e:
+        #                     logging.error(f"Failed to delete {tile_path}: {e}")
+        #                 sources_yearly_data_index[year][data_name].remove(tile_path)
+
+        # logging.info(f"Deleted files count: {deleted_files_count}")
+        # logging.info(f"Affected data: {deleted_data_info}")
+
+        # remaining_tiles = common_tiles
+        # logging.info(f"Number of remaining tiles: {len(remaining_tiles)}")
+
+        return sources_yearly_data_index, remaining_tiles
 
     def process_static_data(
         self, 
@@ -447,7 +459,7 @@ class DatasetGenerator:
         
         return tiles_path, tiles_output_path
     
-    def generate_targets(self, dataset_folder_path: Path, target_years_ranges: list, resolution_config: dict, projections_config: dict):
+    def generate_targets(self, dataset_folder_path: Path, target_years_ranges: list, resolution_config: dict, projections_config: dict, big_tiles: gpd.GeoDataFrame):
         logging.info("Generating targets...")
         
         fire_data_source = NbacFireDataSource(Path(self.input_folder_path))
@@ -472,8 +484,8 @@ class DatasetGenerator:
                 tile_size_in_pixels=resolution_config['tile_size_in_pixels'],
                 pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
                 output_folder=year_range_file_path.parent,
-                big_tiles=self.boundary.boundary,
-                source_srs=projections_config['source_srs'],
+                big_tiles=big_tiles,
+                source_srs=projections_config['target_srs'],
                 target_srs=projections_config['target_srs'],
                 resample_algorithm_continuous=resolution_config['resample_algorithm_continuous'],
                 resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
