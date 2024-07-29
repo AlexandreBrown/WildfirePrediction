@@ -72,7 +72,7 @@ Dynamic data is data that changes with time. This data is updated on a daily/wee
 ### Static  
 Static data is the data that does not change over time or for which we only have 1 time slice.
 #### Elevation 
-- [NASADEM Merged DEM Global 1 arc second](https://lpdaac.usgs.gov/products/nasadem_hgtv001/)
+- [NASA Shuttle Radar Topography Mission Global 3 arc second](https://lpdaac.usgs.gov/products/srtmgl3v003/)
   - Elevation
 
 ### Data Aggregation  

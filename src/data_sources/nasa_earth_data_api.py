@@ -170,7 +170,10 @@ class NasaEarthDataApi:
                     self.save_tasks_info()
     
     def format_date(self, date_str):
-        parsed_date = datetime.strptime(date_str, '%m/%d/%Y')
+        try:
+            parsed_date = datetime.strptime(date_str, '%m/%d/%Y')
+        except Exception:
+            parsed_date = datetime.strptime(date_str, '%Y-%m-%d')
         formatted_date = parsed_date.strftime('%m-%d-%Y')
         return formatted_date
     

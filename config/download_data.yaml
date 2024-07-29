@@ -36,8 +36,8 @@ sources:
                 - water_mask
             - MOD14A2.061:
                 - FireMask
-            - NASADEM_NC.001:
-                - NASADEM_HGT
+            - SRTMGL3_NC.003:
+                - SRTMGL3_DEM
 logs:
     nasa_earth_data_logs_folder_path: "logs/download_data/20240711-081839/"
 outputs:
