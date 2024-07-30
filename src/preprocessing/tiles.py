@@ -112,64 +112,34 @@ class Tiles:
 
         num_bands = input_ds.RasterCount
 
-        target_srs = osr.SpatialReference()
-        target_srs.ImportFromEPSG(self.target_srs)
-
-        geotransform = input_ds.GetGeoTransform()
-
         output_files_paths = []
         for _, row in self.big_tiles.iterrows():
-            tile_output_path = self.make_tile(input_ds, num_bands, target_srs, geotransform, row, tile_folder)
-            if tile_output_path is not None:
-                output_files_paths.append(tile_output_path)
+            tile_output_path = self.make_tile(input_ds, num_bands, row, tile_folder)
+            output_files_paths.append(tile_output_path)
     
         return output_files_paths
 
-    def make_tile(self, input_ds: gdal.Dataset, num_bands: int, target_srs: osr.SpatialReference, geotransform: tuple, row: gpd.GeoSeries, tile_folder: Path) -> Optional[Path]:
+    def make_tile(self, input_ds: gdal.Dataset, num_bands: int, row: gpd.GeoSeries, tile_folder: Path) -> Optional[Path]:
         tile_geometry = row['geometry']
         bounds = tile_geometry.bounds
         minx, miny, maxx, maxy = bounds
-        x_offset_in_nb_pixels = int((minx - geotransform[0]) / geotransform[1])
-        y_offset_in_nb_pixels = int((geotransform[3] - maxy) / abs(geotransform[5]))
-    
-        tile_nc_file = tile_folder / f"tile_{x_offset_in_nb_pixels}_{y_offset_in_nb_pixels}.nc"
         
-        driver = gdal.GetDriverByName("netCDF")
-        tile_ds = driver.Create(str(tile_nc_file), self.tile_size_in_pixels, self.tile_size_in_pixels, num_bands, input_ds.GetRasterBand(1).DataType)
-
-        new_geotransform = (
-            geotransform[0] + x_offset_in_nb_pixels * geotransform[1],
-            geotransform[1],
-            0,
-            geotransform[3] + y_offset_in_nb_pixels * geotransform[5],
-            0,
-            geotransform[5]
+        translate_options = gdal.TranslateOptions(
+            format="netCDF",
+            outputType=gdal.GDT_Float32,
+            bandList=list(range(1, num_bands+1)),
+            width=self.tile_size_in_pixels,
+            height=self.tile_size_in_pixels,
+            xRes=self.pixel_size_in_meters,
+            yRes=self.pixel_size_in_meters,
+            projWin=[minx, maxy, maxx, miny],
+            projWinSRS=self.target_srs,
+            strict=False,
+            unscale=True
         )
-        tile_ds.SetGeoTransform(new_geotransform)
-        tile_ds.SetProjection(target_srs.ExportToWkt())
-
-        keep_tile = False
-        for band in range(1, num_bands+1):
-            raster_band = input_ds.GetRasterBand(band)
-            read_width = min(self.tile_size_in_pixels, input_ds.RasterXSize - x_offset_in_nb_pixels)
-            read_height = min(self.tile_size_in_pixels, input_ds.RasterYSize - y_offset_in_nb_pixels)
-            actual_data = raster_band.ReadAsArray(x_offset_in_nb_pixels, y_offset_in_nb_pixels, read_width, read_height)
-            no_data_value = self.get_no_data_value(raster_band)
-            non_zero_data_count = np.count_nonzero(actual_data != no_data_value)
-            
-            keep_tile = non_zero_data_count > 0
-            if not keep_tile:
-                tile_nc_file.unlink()
-                tile_nc_file = None
-                break
-            
-            tile_band = tile_ds.GetRasterBand(band)
-            tile_band.SetNoDataValue(no_data_value)
-
-            tile_data = np.full((self.tile_size_in_pixels, self.tile_size_in_pixels), no_data_value, dtype=np.float32)
-            tile_data[:read_height, :read_width] = actual_data
-    
-            tile_band.WriteArray(tile_data)
-            tile_band.FlushCache()
+        
+        tile_nc_file = tile_folder / f"tile_{minx}_{maxy}.nc"
+        
+        gdal.Translate(destName=str(tile_nc_file.resolve()), srcDS=input_ds, options=translate_options)
         
         return tile_nc_file
