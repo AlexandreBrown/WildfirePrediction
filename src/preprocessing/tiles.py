@@ -34,6 +34,7 @@ class Tiles:
         self.resample_algorithm_categorical = resample_algorithm_categorical
         self.raw_tiles_folder = raw_tiles_folder
         self.big_tiles = big_tiles
+        gdal.UseExceptions()
         
         self.output_folder.mkdir(parents=True, exist_ok=True)
     
@@ -113,13 +114,13 @@ class Tiles:
         num_bands = input_ds.RasterCount
 
         output_files_paths = []
-        for _, row in self.big_tiles.iterrows():
-            tile_output_path = self.make_tile(input_ds, num_bands, row, tile_folder)
+        for index, row in self.big_tiles.iterrows():
+            tile_output_path = self.make_tile(input_ds, num_bands, row, tile_folder, str(index))
             output_files_paths.append(tile_output_path)
     
         return output_files_paths
 
-    def make_tile(self, input_ds: gdal.Dataset, num_bands: int, row: gpd.GeoSeries, tile_folder: Path) -> Optional[Path]:
+    def make_tile(self, input_ds: gdal.Dataset, num_bands: int, row: gpd.GeoSeries, tile_folder: Path, tile_identifier: str) -> Optional[Path]:
         tile_geometry = row['geometry']
         bounds = tile_geometry.bounds
         minx, miny, maxx, maxy = bounds
@@ -127,19 +128,18 @@ class Tiles:
         translate_options = gdal.TranslateOptions(
             format="netCDF",
             outputType=gdal.GDT_Float32,
-            bandList=list(range(1, num_bands+1)),
             width=self.tile_size_in_pixels,
             height=self.tile_size_in_pixels,
-            xRes=self.pixel_size_in_meters,
-            yRes=self.pixel_size_in_meters,
             projWin=[minx, maxy, maxx, miny],
-            projWinSRS=self.target_srs,
-            strict=False,
+            projWinSRS=f"EPSG:{self.target_srs}",
+            strict=True,
             unscale=True
         )
         
-        tile_nc_file = tile_folder / f"tile_{minx}_{maxy}.nc"
+        tile_nc_file = tile_folder / f"tile_{tile_identifier}.nc"
         
-        gdal.Translate(destName=str(tile_nc_file.resolve()), srcDS=input_ds, options=translate_options)
+        result = gdal.Translate(destName=str(tile_nc_file), srcDS=input_ds, options=translate_options)
+        
+        assert result is not None, f"Failed to create tile {tile_nc_file}"
         
         return tile_nc_file
