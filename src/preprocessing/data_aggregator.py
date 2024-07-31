@@ -35,7 +35,7 @@ class DataAggregator:
 
         on_band_read = partial(update_sum_count, sum_data=sum_data, count_data=count_data, no_data_value=no_data_value)
         get_final_output_band_data = partial(compute_avg_data, sum_data=sum_data, count_data=count_data, no_data_value=no_data_value)
-        self.aggregate_bands(input_dataset, output_band, on_band_read, get_final_output_band_data)
+        self.aggregate_bands(input_dataset, output_band, on_band_read, get_final_output_band_data, output_dataset)
         
         return output_file_path
     
@@ -48,11 +48,11 @@ class DataAggregator:
 
         on_band_read = partial(update_max_data, max_data=max_data, no_data_value=no_data_value)
         get_final_output_band_data = lambda : max_data
-        self.aggregate_bands(input_dataset, output_band, on_band_read, get_final_output_band_data)
+        self.aggregate_bands(input_dataset, output_band, on_band_read, get_final_output_band_data, output_dataset)
         
         return output_file_path
     
-    def aggregate_bands(self, input_dataset: gdal.Dataset, output_band: gdal.Band, on_band_read, get_final_output_band_data):
+    def aggregate_bands(self, input_dataset: gdal.Dataset, output_band: gdal.Band, on_band_read, get_final_output_band_data, output_dataset: gdal.Dataset):
         has_sub_datasets = len(input_dataset.GetSubDatasets()) > 0
         num_bands = self.get_num_bands(input_dataset, has_sub_datasets)
 
@@ -61,7 +61,8 @@ class DataAggregator:
             on_band_read(band_data=band_data)
 
         output_band.WriteArray(get_final_output_band_data())
-        output_band.FlushCache()
+        
+        output_dataset.FlushCache()
     
     def create_aggregated_dataset_and_band(self, input_dataset: gdal.Dataset, output_path: Path, output_file_name_without_extension: str) -> tuple:
         
@@ -173,18 +174,18 @@ class DataAggregator:
 
         on_band_read = partial(update_sum_count, sum_data=sum_data, count_data=count_data, no_data_value=no_data_value)
         get_final_output_band_data = partial(compute_avg_data, sum_data=sum_data, count_data=count_data, no_data_value=no_data_value)
-        self.aggregate_datasets(input_datasets, output_band, on_band_read, get_final_output_band_data)
+        self.aggregate_datasets(input_datasets, output_band, on_band_read, get_final_output_band_data, output_dataset)
         
         return output_file_path
         
-    def aggregate_datasets(self, input_datasets: list, output_band: gdal.Band, on_band_read, get_final_output_band_data):
+    def aggregate_datasets(self, input_datasets: list, output_band: gdal.Band, on_band_read, get_final_output_band_data, output_dataset: gdal.Dataset):
         
         for input_dataset in input_datasets:
             band_data = input_dataset.GetRasterBand(1).ReadAsArray()
             on_band_read(band_data=band_data)
 
         output_band.WriteArray(get_final_output_band_data())
-        output_band.FlushCache()
+        output_dataset.FlushCache()
     
     def aggregate_files_by_max(self, input_datasets_paths: list, output_folder_path: Path) -> Path:
         input_datasets = [gdal.Open(str(input_path)) for input_path in input_datasets_paths]
@@ -195,6 +196,6 @@ class DataAggregator:
 
         on_band_read = partial(update_max_data, max_data=max_data, no_data_value=no_data_value)
         get_final_output_band_data = lambda : max_data
-        self.aggregate_datasets(input_datasets, output_band, on_band_read, get_final_output_band_data)
+        self.aggregate_datasets(input_datasets, output_band, on_band_read, get_final_output_band_data, output_dataset)
         
         return output_file_path

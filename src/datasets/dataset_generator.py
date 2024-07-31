@@ -98,7 +98,7 @@ class DatasetGenerator:
 
         sources_yearly_data_index = self.process_static_data(processed_data_folder_path, sources_yearly_data_index, big_tiles, static_sources, resolution_config, projections_config)
 
-        sources_yearly_data_index, tiles_names = self.delete_orphan_tiles(sources_yearly_data_index)
+        sources_yearly_data_index, tiles_names = self.get_intersection_tiles(sources_yearly_data_index)
 
         self.stack_data(sources_yearly_data_index, tiles_names, dataset_folder_path, periods_config, resolution_config, dynamic_sources, static_sources, target_years_ranges)
 
@@ -129,7 +129,7 @@ class DatasetGenerator:
                 
                 for static_source_name, _ in static_sources:
                     number_of_bands += 1
-            
+
                 x_size = resolution_config['tile_size_in_pixels']
                 y_size = resolution_config['tile_size_in_pixels']
                 data_type = gdal.GDT_Float32
@@ -152,8 +152,9 @@ class DatasetGenerator:
                                 input_ds = gdal.Open(file_path)
                                 input_band = input_ds.GetRasterBand(1)
                                 input_band_data = input_band.ReadAsArray()
+                                output_band.SetDescription(f"{dynamic_source_name}_{year}")
                                 output_band.WriteArray(input_band_data)
-                                output_band.FlushCache()
+                                stacked_tile_ds.FlushCache()
                                 break
                         
                         band_index += 1
@@ -169,13 +170,14 @@ class DatasetGenerator:
                             input_ds = gdal.Open(file_path, gdal.GA_ReadOnly)
                             input_band = input_ds.GetRasterBand(1)
                             input_band_data = input_band.ReadAsArray()
+                            output_band.SetDescription(f"{static_source_name}")
                             output_band.WriteArray(input_band_data)
-                            output_band.FlushCache()
+                            stacked_tile_ds.FlushCache()
                             break
                     
                     band_index += 1    
 
-    def get_data_years_range(self, target_years_range: range, periods_config: dict, is_affected_by_fires: bool) -> tuple:
+    def get_data_years_range(self, target_years_range: range, periods_config: dict, is_affected_by_fires: bool) -> range:
         if is_affected_by_fires:
             year_end_inclusive = target_years_range[0] - 1
             year_start_inclusive = year_end_inclusive - periods_config['input_data_affected_by_fires_period_length_in_years'] + 1
@@ -183,7 +185,7 @@ class DatasetGenerator:
             year_end_inclusive = target_years_range[-1]
             year_start_inclusive = target_years_range[0]
         
-        return year_start_inclusive, year_end_inclusive
+        return range(year_start_inclusive, year_end_inclusive+1)
 
     def generate_target_years_ranges(self, periods_config: dict) -> list:
         target_year_start_inclusive = periods_config['target_year_start_inclusive']
@@ -198,48 +200,32 @@ class DatasetGenerator:
         
         return target_year_ranges
 
-    def delete_orphan_tiles(self, sources_yearly_data_index) -> tuple:
-        # TODO: Implement this method
-        # data_tiles = defaultdict(lambda: defaultdict(set))
-
-        # for year, year_data in sources_yearly_data_index.items():
-        #     for data_name, tiles_paths in year_data.items():
-        #         for tile_path in tiles_paths:
-        #             tile_name = tile_path.stem
-        #             data_tiles[data_name][year].add(tile_name)
-
-        # all_tiles_sets = []
-        # for data_name, yearly_tiles in data_tiles.items():
-        #     data_name_tiles = set.intersection(*yearly_tiles.values())
-        #     all_tiles_sets.append(data_name_tiles)
-
-        # common_tiles = set.intersection(*all_tiles_sets)
-
-        # logging.info(f"Common tiles count: {len(common_tiles)}")
-
-        # deleted_files_count = 0
-        # deleted_data_info = set()
-
-        # for year, year_data in sources_yearly_data_index.items():
-        #     for data_name, tiles_paths in year_data.items():
-        #         for tile_path in list(tiles_paths):  # Convert to list to modify in loop
-        #             tile_name = tile_path.stem
-        #             if tile_name not in common_tiles:
-        #                 try:
-        #                     tile_path.unlink()
-        #                     deleted_files_count += 1
-        #                     deleted_data_info.add((data_name, year))
-        #                 except Exception as e:
-        #                     logging.error(f"Failed to delete {tile_path}: {e}")
-        #                 sources_yearly_data_index[year][data_name].remove(tile_path)
-
-        # logging.info(f"Deleted files count: {deleted_files_count}")
-        # logging.info(f"Affected data: {deleted_data_info}")
-
-        # remaining_tiles = common_tiles
-        # logging.info(f"Number of remaining tiles: {len(remaining_tiles)}")
-
-        return sources_yearly_data_index, remaining_tiles
+    def get_intersection_tiles(self, sources_yearly_data_index) -> tuple:
+        tiles_to_keep = set()
+        for yearly_data in sources_yearly_data_index.values():
+            for source_yearly_tiles in yearly_data.values():
+                running_tiles_to_keep = set()
+                for tile_data in source_yearly_tiles:
+                    running_tiles_to_keep.add(tile_data.stem)
+                
+                if len(tiles_to_keep) == 0:
+                    tiles_to_keep = running_tiles_to_keep
+                else:
+                    logging.info(f"Tiles to keep before : {len(tiles_to_keep)}")
+                    tiles_to_keep = tiles_to_keep.intersection(running_tiles_to_keep)
+                    logging.info(f"Tiles to after before : {len(tiles_to_keep)}")
+        
+        nb_tiles_removed = 0
+        for yearly_data in sources_yearly_data_index.values():
+            for source_yearly_tiles in yearly_data.values():
+                for tile_data in source_yearly_tiles:
+                    if tile_data.stem not in tiles_to_keep:
+                        tile_data.unlink()
+                        source_yearly_tiles.pop(tile_data)
+                        nb_tiles_removed += 1
+        logging.info(f"Removed {nb_tiles_removed} tiles!")
+        
+        return sources_yearly_data_index, tiles_to_keep
 
     def process_static_data(
         self, 
@@ -329,12 +315,12 @@ class DatasetGenerator:
         resolution_config: dict, 
         projections_config: dict
     ) -> dict:
-        year_start_inclusive, year_end_inclusive = self.get_dynamic_data_year_periods(periods_config, is_affected_by_fires)
+        year_range = self.get_dynamic_data_year_periods(periods_config, is_affected_by_fires)
         
-        logging.info(f"{source_name} Year start: {year_start_inclusive}, year end: {year_end_inclusive}")
+        logging.info(f"{source_name} Year range: {year_range}")
         
         years_tiles_data = []
-        for year in range(year_start_inclusive, year_end_inclusive + 1):
+        for year in year_range:
             year_tiles_data = self.get_dynamic_source_tiles_months_data_for_1_year(processed_data_folder_path / Path(f"{year}"), year, source_name, layer_name, source_values, big_tiles, periods_config, resolution_config, projections_config)
             years_tiles_data.append(year_tiles_data)
             
@@ -371,7 +357,7 @@ class DatasetGenerator:
                 
         return yearly_data_for_source
     
-    def get_dynamic_data_year_periods(self, periods_config: dict, is_affected_by_fires: bool) -> tuple:
+    def get_dynamic_data_year_periods(self, periods_config: dict, is_affected_by_fires: bool) -> range:
         if is_affected_by_fires:
             year_end_inclusive = periods_config['target_year_start_inclusive'] - 1
             year_start_inclusive = year_end_inclusive - periods_config['input_data_affected_by_fires_period_length_in_years'] + 1
@@ -379,7 +365,7 @@ class DatasetGenerator:
             year_end_inclusive = periods_config['target_year_end_inclusive']
             year_start_inclusive = periods_config['target_year_start_inclusive']
         
-        return year_start_inclusive, year_end_inclusive
+        return range(year_start_inclusive, year_end_inclusive+1)
     
     def get_dynamic_source_tiles_months_data_for_1_year(
         self,
