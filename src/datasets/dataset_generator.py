@@ -455,7 +455,7 @@ class DatasetGenerator:
             
         target = FireOccurrenceTarget(
             fire_data_source=fire_data_source,
-            canada=self.boundary,
+            boundary=self.boundary,
             resolution_in_meters=resolution_config['pixel_size_in_meters'],
             target_epsg_code=projections_config['target_srs'],
             output_folder_path=target_output_folder_path
@@ -463,7 +463,7 @@ class DatasetGenerator:
         
         for target_years_range in target_years_ranges:
             logging.info(f"Generating targets for target years range: [{target_years_range[0]}, {target_years_range[-1]}]...")
-            year_range_file_path = target.generate_targets(target_years_range, save_individual_years=False)[0]
+            year_range_file_path = target.generate_target_for_years(target_years_range, save_individual_years=False)[0]
             tiles = Tiles(
                 raw_tiles_folder=year_range_file_path.parent,
                 layer_name="",

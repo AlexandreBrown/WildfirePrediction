@@ -1,136 +1,80 @@
 import geopandas as gpd
-import shutil
-import numpy as np
 from pathlib import Path
-from data_sources.nbac_fire_data_source import NbacFireDataSource
 from boundaries.canada_boundary import CanadaBoundary
+from data_sources.nbac_fire_data_source import NbacFireDataSource
 from osgeo import gdal, osr
 
 
 class FireOccurrenceTarget:
     def __init__(
         self, 
-        fire_data_source: NbacFireDataSource, 
-        canada: CanadaBoundary,
-        resolution_in_meters: int,
+        fire_data_source: NbacFireDataSource,
+        boundary: CanadaBoundary,
+        target_pixel_size_in_meters: int,
         target_epsg_code: int = 3978,
         output_folder_path: Path = Path("../data/target/")
     ):
         self.fire_data_source = fire_data_source
-        self.canada = canada
-        self.resolution_in_meters = resolution_in_meters
+        self.boundary = boundary
+        self.target_pixel_size_in_meters = target_pixel_size_in_meters
         self.target_epsg_code = target_epsg_code
         self.output_folder_path = output_folder_path
         self.output_folder_path.mkdir(parents=True, exist_ok=True)
     
-    def generate_targets(self, years: range, save_individual_years: bool = False) -> list:
-        merged_raster = None
+    def generate_target_for_years_ranges(self, years_ranges: list) -> dict:
+        years_ranges_output_paths = {}
         
-        for year in years:
-            target_file_path = self.generate(year=year)
-            target_dataset = gdal.Open(str(target_file_path))
-            target_band = target_dataset.GetRasterBand(1)
-            target_data = target_band.ReadAsArray()
-
-            if merged_raster is None:
-                rows, cols = target_data.shape
-                merged_raster = np.zeros((rows, cols), dtype=np.uint8)
-                target_srs = osr.SpatialReference()
-                target_srs.ImportFromEPSG(self.target_epsg_code)
-                geotransform = target_dataset.GetGeoTransform()
-
-            merged_raster = np.maximum(merged_raster, target_data, dtype=np.uint8)
-            
-            shutil.rmtree(target_file_path.parent)
-
-        merged_dataset = self.create_raster_from_array(merged_raster, geotransform, target_srs)
-
-        merged_output_paths = []
+        for years_range in years_ranges:
+            years_ranges_output_paths[(years_range[0], years_range[-1])] = self.generate_target_for_years(years_range, years_ranges_output_paths)
         
-        if save_individual_years:
-            for year in years:
-                merged_output_path = self.save_target(merged_dataset, str(year), self.output_folder_path)
-                merged_output_paths.append(merged_output_path)
-        else:
-            merged_output_path = self.save_target(merged_dataset, f"{years[0]}_{years[-1]}", self.output_folder_path)
-            merged_output_paths.append(merged_output_path)
-            
-        return merged_output_paths
+        return years_ranges_output_paths
+        
     
-    def create_raster_from_array(self, array: np.ndarray, geotransform: tuple, srs: osr.SpatialReference) -> gdal.Dataset:
-        driver = gdal.GetDriverByName('MEM')
+    def generate_target_for_years(self, years: range) -> Path:
+        years_fire_polygons = self.get_years_fire_polygons(years)
         
-        rows, cols = array.shape
+        years_fire_polygon_shapefile_path = self.output_folder_path / Path(f"fire_polygons_{years[0]}_{years[-1]}.shp")
+        years_fire_polygons.to_file(years_fire_polygon_shapefile_path, driver='ESRI Shapefile')
         
-        dataset = driver.Create('', cols, rows, 1, gdal.GDT_Byte)
-        dataset.SetGeoTransform(geotransform)
-        dataset.SetProjection(srs.ExportToWkt())
+        output_dataset_path = self.output_folder_path / Path(f"target_{years[0]}_{years[-1]}.nc")
         
-        band = dataset.GetRasterBand(1)
-        band.WriteArray(array)
-        band.SetNoDataValue(0)
+        boundary_extent = self.boundary.boundary.total_bounds
+        x_min, y_min, x_max, y_max = boundary_extent
         
-        return dataset
-    
-    def generate(self, year: int) -> Path:
-        fire_polygons_shp_path = self.get_fire_polygons_path(year)
+        x_res = int((x_max - x_min) / self.target_pixel_size_in_meters)
+        y_res = int((y_max - y_min) / self.target_pixel_size_in_meters)
         
-        canada_boundary = self.get_canada_boundary()
+        driver = gdal.GetDriverByName('NetCDF')
+        output_target_dataset = driver.Create(str(output_dataset_path), x_res, y_res, 1, gdal.GDT_Byte)
+        output_target_dataset.SetGeoTransform((x_min, self.target_pixel_size_in_meters, 0, y_max, 0, -self.target_pixel_size_in_meters))
+        srs = osr.SpatialReference()
+        srs.ImportFromEPSG(self.target_epsg_code)
+        output_target_dataset.SetProjection(srs.ExportToWkt())
         
-        empty_canada_raster = self.create_empty_raster(canada_boundary)
-        
-        target_dataset = self.burn_fire_polygons_to_raster(empty_canada_raster, fire_polygons_shp_path)
-        
-        target_file_path = self.save_target(target_dataset, year, self.output_folder_path)
-        
-        shutil.rmtree(fire_polygons_shp_path.parent)
-        
-        return target_file_path
-
-    def get_fire_polygons_path(self, year: int) -> Path:
-        fire_polygons = self.fire_data_source.download(year)
-        fire_polygons = fire_polygons.to_crs(epsg=self.target_epsg_code)
-        
-        fire_polygons_shp_path = self.output_folder_path / "tmp"
-        fire_polygons_shp_path.mkdir(parents=True, exist_ok=True)
-        fire_polygons_shp_path = fire_polygons_shp_path / f"fire_occurrence_{year}.shp"
-        fire_polygons.to_file(fire_polygons_shp_path, driver='ESRI Shapefile')
-        
-        return fire_polygons_shp_path
-
-    def get_canada_boundary(self) -> gpd.GeoDataFrame:
-        self.canada.load()
-        canada_boundary = self.canada.boundary
-        canada_boundary = canada_boundary.to_crs(epsg=self.target_epsg_code)
-        return canada_boundary
-    
-    def create_empty_raster(self, canada_boundary: gpd.GeoDataFrame) -> gdal.Dataset:
-        target_srs = osr.SpatialReference()
-        target_srs.ImportFromEPSG(self.target_epsg_code)
-                
-        minx, miny, maxx, maxy = canada_boundary.total_bounds
-        width = int((maxx - minx) / self.resolution_in_meters)
-        height = int((maxy - miny) / self.resolution_in_meters)
-        
-        mem_raster = gdal.GetDriverByName('MEM').Create('', width, height, 1, gdal.GDT_Byte)
-        mem_raster.SetGeoTransform((minx, self.resolution_in_meters, 0, maxy, 0, -self.resolution_in_meters))
-        mem_raster.SetProjection(target_srs.ExportToWkt())
-        band = mem_raster.GetRasterBand(1)
+        band = output_target_dataset.GetRasterBand(1)
         band.SetNoDataValue(0)
         band.Fill(0)
         
-        return mem_raster
-    
-    def burn_fire_polygons_to_raster(self, empty_raster: gdal.Dataset, fire_polygons_shp_path: Path) -> gdal.Dataset:
-        fire_polygons_ds = gdal.OpenEx(str(fire_polygons_shp_path.resolve()))
-        gdal.RasterizeLayer(empty_raster, [1], fire_polygons_ds.GetLayer(), burn_values=[1])
+        years_fire_polygons_shapefile = gdal.OpenEx(str(years_fire_polygon_shapefile_path), gdal.OF_VECTOR)
+        years_fire_polygons_layer = years_fire_polygons_shapefile.GetLayer()
+        bands_to_rasterize = [1]
+        gdal.RasterizeLayer(output_target_dataset, bands_to_rasterize, years_fire_polygons_layer, burn_values=[1])
         
-        return empty_raster
-    
-    def save_target(self, target_dataset: gdal.Dataset, year: str, base_path: Path) -> Path:
-        driver = gdal.GetDriverByName('NetCDF')
-        target_file_path = base_path / Path(f"{year}") / Path("fire_occurrences.nc")
-        target_file_path.parent.mkdir(parents=True, exist_ok=True)
-        driver.CreateCopy(str(target_file_path.resolve()), target_dataset)
+        output_target_dataset.FlushCache()
         
-        return target_file_path
+        return output_dataset_path
+    
+    def get_years_fire_polygons(self, years: range) -> gpd.GeoDataFrame:
+        years_fire_polygons = None
+        
+        for year in years:
+            year_fire_polygons = self.fire_data_source.download(year)
+            year_fire_polygons = year_fire_polygons.to_crs(epsg=self.target_epsg_code)
+            year_fire_polygons = self.boundary.boundary.intersection(year_fire_polygons)
+            
+            if years_fire_polygons is None:
+                years_fire_polygons = year_fire_polygons
+            else:
+                years_fire_polygons = gpd.overlay(years_fire_polygons, year_fire_polygons, how='union')
+        
+        return years_fire_polygons
