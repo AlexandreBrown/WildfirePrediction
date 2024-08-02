@@ -4,11 +4,12 @@ import shutil
 import geopandas as gpd
 import multiprocessing as mp
 import os
+import json
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
 from grid.square_meters_grid import SquareMetersGrid
 from preprocessing.data_aggregator import DataAggregator
-from preprocessing.tiles import Tiles
+from preprocessing.tiles_preprocessor import TilesPreprocessor
 from pathlib import Path
 from collections import defaultdict
 from osgeo import gdal
@@ -21,13 +22,13 @@ logging.basicConfig(level=logging.INFO)
 class DatasetGenerator:
     def __init__(
         self, 
-        boundary: CanadaBoundary, 
+        canada_boundary: CanadaBoundary, 
         grid: SquareMetersGrid,
         input_folder_path: Path,
         output_folder_path: Path,
         debug: bool
     ):
-        self.boundary = boundary
+        self.canada_boundary = canada_boundary
         self.grid = grid
         self.input_folder_path = input_folder_path
         self.output_folder_path = output_folder_path
@@ -44,7 +45,7 @@ class DatasetGenerator:
         logging.info("Generating dataset...")
         
         logging.info("Generating big tiles...")
-        big_tiles = self.grid.get_tiles(self.boundary.boundary)
+        big_tiles_boundaries = self.grid.get_tiles_boundaries(self.canada_boundary.boundary)
         
         logging.info("Generating dataset UUID...")
         dataset_uuid = str(uuid.uuid4())
@@ -59,24 +60,30 @@ class DatasetGenerator:
         
             logging.info(f"Target years ranges: {target_years_ranges}")
             
-            self.generate_data(dataset_folder_path, tmp_path, big_tiles, dynamic_sources, static_sources, periods_config, resolution_config, projections_config, target_years_ranges)
+            self.generate_data(dataset_folder_path, tmp_path, big_tiles_boundaries, dynamic_sources, static_sources, periods_config, resolution_config, projections_config, target_years_ranges)
             
-            self.generate_targets(dataset_folder_path, target_years_ranges, resolution_config, projections_config, big_tiles)
+            self.generate_targets(dataset_folder_path, tmp_path, target_years_ranges, big_tiles_boundaries, resolution_config, projections_config)
             
             if not self.debug:
                 logging.info("Cleaning up tmp folder...")
                 shutil.rmtree(tmp_path)
+            else:
+                logging.info("Not cleaning up tmp folder since debug=True!")
+                
         except BaseException as e:
             logging.error(f"Error: {e}")
             if not self.debug:
+                logging.info("Cleaning up dataset folder...")
                 shutil.rmtree(dataset_folder_path)
+            else:
+                logging.info("Not cleaning up dataset folder since debug=True!")
             raise e
         
     def generate_data(
         self, 
         dataset_folder_path: Path, 
         tmp_path: Path,
-        big_tiles: gpd.GeoDataFrame, 
+        big_tiles_boundaries: gpd.GeoDataFrame, 
         dynamic_sources: list, 
         static_sources: list, 
         periods_config: dict, 
@@ -94,13 +101,22 @@ class DatasetGenerator:
         
         processed_data_folder_path.mkdir(parents=True, exist_ok=True)
         
-        sources_yearly_data_index = self.process_dynamic_data(processed_data_folder_path, dynamic_sources, big_tiles, periods_config, resolution_config, projections_config, max_nb_processes)
+        sources_yearly_data_index = self.process_dynamic_data(processed_data_folder_path, dynamic_sources, big_tiles_boundaries, periods_config, resolution_config, projections_config, max_nb_processes)
 
-        sources_yearly_data_index = self.process_static_data(processed_data_folder_path, sources_yearly_data_index, big_tiles, static_sources, resolution_config, projections_config)
+        sources_yearly_data_index = self.process_static_data(processed_data_folder_path, sources_yearly_data_index, big_tiles_boundaries, static_sources, resolution_config, projections_config)
 
         sources_yearly_data_index, tiles_names = self.get_intersection_tiles(sources_yearly_data_index)
 
         self.stack_data(sources_yearly_data_index, tiles_names, dataset_folder_path, periods_config, resolution_config, dynamic_sources, static_sources, target_years_ranges)
+        
+        if self.debug:
+            logs_folder = dataset_folder_path / Path("logs")
+            logs_folder.mkdir(parents=True, exist_ok=True)
+            logging.info("Saving sources yearly data index logs for debugging...")
+            serializable_sources_yearly_data_index = {year: {source_name: [str(tile_path) for tile_path in tile_paths] for source_name, tile_paths in source_yearly_data.items()} for year, source_yearly_data in sources_yearly_data_index.items()}
+            with open(logs_folder / "sources_yearly_data_index.json", "w") as f:
+                json.dump(serializable_sources_yearly_data_index, f, indent=4)
+                
 
     def stack_data(self, sources_yearly_data_index: dict, tiles_names: list, dataset_folder_path: Path, periods_config: dict, resolution_config: dict, dynamic_sources: list, static_sources: list, target_years_ranges: list):
         logging.info("Stacking data...")
@@ -231,7 +247,7 @@ class DatasetGenerator:
         self, 
         processed_data_folder_path: Path,
         sources_yearly_data_index: dict, 
-        big_tiles: gpd.GeoDataFrame, 
+        big_tiles_boundaries: gpd.GeoDataFrame, 
         static_sources: list, 
         resolution_config: dict, 
         projections_config: dict
@@ -247,20 +263,20 @@ class DatasetGenerator:
             
             logging.info(f"Processing {source_name}...")
             
-            tiles = Tiles(
+            tiles = TilesPreprocessor(
                 raw_tiles_folder=raw_tiles_folder,
                 layer_name=layer_name,
                 tile_size_in_pixels=resolution_config['tile_size_in_pixels'],
                 pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
                 output_folder=tiling_output_folder_path,
-                big_tiles=big_tiles,
+                big_tiles_boundaries=big_tiles_boundaries,
                 source_srs=projections_config['source_srs'],
                 target_srs=projections_config['target_srs'],
                 resample_algorithm_continuous=resolution_config['resample_algorithm_continuous'],
                 resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
             )
             
-            tiles_paths = tiles.generate_preprocessed_tiles(data_type=source_values['data_type'])
+            tiles_paths = tiles.preprocess_tiles(data_type=source_values['data_type'])
                         
             for year in sources_yearly_data_index.keys():
                 sources_yearly_data_index[year][source_name] = tiles_paths
@@ -271,7 +287,7 @@ class DatasetGenerator:
         self, 
         processed_data_folder_path: Path, 
         dynamic_sources: list, 
-        big_tiles: gpd.GeoDataFrame, 
+        big_tiles_boundaries: gpd.GeoDataFrame, 
         periods_config: dict, 
         resolution_config: dict, 
         projections_config: dict,
@@ -280,7 +296,7 @@ class DatasetGenerator:
         logging.info(f"Processing {len(dynamic_sources)} dynamic sources...")
                         
         source_args = [
-            (processed_data_folder_path, source_name, source_values, source_values['layer'], source_values['is_affected_by_fires'], big_tiles, periods_config, resolution_config, projections_config) 
+            (processed_data_folder_path, source_name, source_values, source_values['layer'], source_values['is_affected_by_fires'], big_tiles_boundaries, periods_config, resolution_config, projections_config) 
             for (source_name, source_values) in dynamic_sources
         ]
         
@@ -310,7 +326,7 @@ class DatasetGenerator:
         source_values: dict,
         layer_name: str,
         is_affected_by_fires: bool,
-        big_tiles: gpd.GeoDataFrame,
+        big_tiles_boundaries: gpd.GeoDataFrame,
         periods_config: dict,
         resolution_config: dict, 
         projections_config: dict
@@ -321,7 +337,7 @@ class DatasetGenerator:
         
         years_tiles_data = []
         for year in year_range:
-            year_tiles_data = self.get_dynamic_source_tiles_months_data_for_1_year(processed_data_folder_path / Path(f"{year}"), year, source_name, layer_name, source_values, big_tiles, periods_config, resolution_config, projections_config)
+            year_tiles_data = self.get_dynamic_source_tiles_months_data_for_1_year(processed_data_folder_path / Path(f"{year}"), year, source_name, layer_name, source_values, big_tiles_boundaries, periods_config, resolution_config, projections_config)
             years_tiles_data.append(year_tiles_data)
             
         year_data_aggregator = DataAggregator()
@@ -374,7 +390,7 @@ class DatasetGenerator:
         source_name: str,
         layer_name: str,
         source_values: dict,
-        big_tiles: gpd.GeoDataFrame,
+        big_tiles_boundaries: gpd.GeoDataFrame,
         periods_config: dict,
         resolution_config: dict,
         projections_config: dict
@@ -390,7 +406,7 @@ class DatasetGenerator:
         
         months_tiles = []
         for month in months:
-            month_tiles = self.get_dynamic_source_tiles_month_data(processed_data_year_output_folder_path, year, month, source_name, layer_name, source_values, big_tiles, periods_config, resolution_config, projections_config)
+            month_tiles = self.get_dynamic_source_tiles_month_data(processed_data_year_output_folder_path, year, month, source_name, layer_name, source_values, big_tiles_boundaries, resolution_config, projections_config)
             months_tiles.append(month_tiles)
 
         logging.info(f"{source_name} Year: {year} Aggregating data monthly...")
@@ -421,60 +437,89 @@ class DatasetGenerator:
         
         return year, tiles_months_data
     
-    def get_dynamic_source_tiles_month_data(self, processed_data_year_output_folder_path: Path, year: int, month: int, source_name: str, layer_name: str, source_values: dict, big_tiles: gpd.GeoDataFrame, periods_config: dict, resolution_config: dict, projections_config: dict) -> tuple:
+    def get_dynamic_source_tiles_month_data(self, processed_data_year_output_folder_path: Path, year: int, month: int, source_name: str, layer_name: str, source_values: dict, big_tiles_boundaries: gpd.GeoDataFrame, resolution_config: dict, projections_config: dict) -> tuple:
         logging.info(f"{source_name} Year: {year} Month: {month}")
             
         raw_tiles_folder = self.input_folder_path / Path(f"{year}") / Path(f"{month}") / Path(f"{source_name}")
         
         tiles_output_path = processed_data_year_output_folder_path / Path(f"{month}") / Path(f"{source_name}")
         
-        tiles = Tiles(
+        tiles = TilesPreprocessor(
             raw_tiles_folder=raw_tiles_folder,
             layer_name=layer_name,
             tile_size_in_pixels=resolution_config['tile_size_in_pixels'],
             pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
             output_folder=tiles_output_path,
-            big_tiles=big_tiles,
+            big_tiles_boundaries=big_tiles_boundaries,
             source_srs=projections_config['source_srs'],
             target_srs=projections_config['target_srs'],
             resample_algorithm_continuous=resolution_config['resample_algorithm_continuous'],
             resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
         )
         
-        tiles_path = tiles.generate_preprocessed_tiles(data_type=source_values['data_type'])
+        tiles_path = tiles.preprocess_tiles(data_type=source_values['data_type'])
         
         return tiles_path, tiles_output_path
     
-    def generate_targets(self, dataset_folder_path: Path, target_years_ranges: list, resolution_config: dict, projections_config: dict, big_tiles: gpd.GeoDataFrame):
+    def generate_targets(self, dataset_folder_path: Path, tmp_path: Path, target_years_ranges: list, big_tiles_boundaries: gpd.GeoDataFrame, resolution_config: dict, projections_config: dict):
         logging.info("Generating targets...")
         
         fire_data_source = NbacFireDataSource(Path(self.input_folder_path))
         
-        target_output_folder_path = dataset_folder_path / Path("targets")
-        target_output_folder_path.mkdir(parents=True, exist_ok=True)
-            
+        tmp_target_folder_path = tmp_path / Path("targets")
+        
+        max_nb_processes = max(1, len(os.sched_getaffinity(0)) - 1)
+        
+        logging.info(f"Max nb processes: {max_nb_processes}")
+
         target = FireOccurrenceTarget(
             fire_data_source=fire_data_source,
-            boundary=self.boundary,
-            resolution_in_meters=resolution_config['pixel_size_in_meters'],
-            target_epsg_code=projections_config['target_srs'],
-            output_folder_path=target_output_folder_path
+            boundary=self.canada_boundary,
+            target_pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
+            target_srid=projections_config['target_srs'],
+            output_folder_path=tmp_target_folder_path,
+            max_nb_processes=max_nb_processes
         )
         
-        for target_years_range in target_years_ranges:
-            logging.info(f"Generating targets for target years range: [{target_years_range[0]}, {target_years_range[-1]}]...")
-            year_range_file_path = target.generate_target_for_years(target_years_range, save_individual_years=False)[0]
-            tiles = Tiles(
-                raw_tiles_folder=year_range_file_path.parent,
+        target_ranges_combined_raster = target.generate_target_for_years_ranges(target_years_ranges)
+        
+        logging.info("Generating tiles for targets...")
+
+        dataset_targets_output_folder_path = dataset_folder_path / Path("target")
+        dataset_targets_output_folder_path.mkdir(parents=True, exist_ok=True)
+
+        for years_range, combined_raster_path in target_ranges_combined_raster.items():
+            tiles_preprocessing_output_folder = tmp_target_folder_path / f"{years_range[0]}_{years_range[-1]}/"
+            
+            tiles_preprocessor = TilesPreprocessor(
+                raw_tiles_folder=combined_raster_path.parent,
                 layer_name="",
                 tile_size_in_pixels=resolution_config['tile_size_in_pixels'],
                 pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
-                output_folder=year_range_file_path.parent,
-                big_tiles=big_tiles,
+                output_folder=tiles_preprocessing_output_folder,
+                big_tiles_boundaries=big_tiles_boundaries,
                 source_srs=projections_config['target_srs'],
                 target_srs=projections_config['target_srs'],
                 resample_algorithm_continuous=resolution_config['resample_algorithm_continuous'],
                 resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
             )
+
+            logging.info(f"Preprocessing tiles for target years range: {years_range}...")
+            tiles_paths = tiles_preprocessor.preprocess_tiles(data_type="categorical")
             
-            tiles.generate_preprocessed_tiles(data_type="categorical")
+            tiles_folder_path = tiles_paths[0].parent
+            
+            years_range_output_folder_path = dataset_targets_output_folder_path / Path(f"{years_range[0]}_{years_range[-1]}")
+            years_range_output_folder_path.mkdir(parents=True, exist_ok=True)
+            
+            logging.info(f"Moving preprocessed tiles to final destination for target years range: {years_range}...")
+            shutil.move(tiles_folder_path, years_range_output_folder_path)
+        
+        logging.info("Generating targets DONE !")
+        if self.debug:
+            logs_folder = dataset_folder_path / Path("logs")
+            logs_folder.mkdir(parents=True, exist_ok=True)
+            logging.info("Saving target ranges combined raster logs for debugging...")
+            serializable_target_ranges_combined_raster = {str(years_range): str(combined_raster_path) for years_range, combined_raster_path in target_ranges_combined_raster.items()}
+            with open(logs_folder / "target_ranges_combined_raster.json", "w") as f:
+                json.dump(serializable_target_ranges_combined_raster, f, indent=4)

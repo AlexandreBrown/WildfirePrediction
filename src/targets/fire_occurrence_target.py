@@ -1,4 +1,6 @@
-import geopandas as gpd
+import logging
+import numpy as np
+import multiprocessing as mp
 from pathlib import Path
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
@@ -11,70 +13,139 @@ class FireOccurrenceTarget:
         fire_data_source: NbacFireDataSource,
         boundary: CanadaBoundary,
         target_pixel_size_in_meters: int,
-        target_epsg_code: int = 3978,
-        output_folder_path: Path = Path("../data/target/")
+        target_srid: int = 3978,
+        output_folder_path: Path = Path("../data/target/"),
+        max_nb_processes: int = 12
     ):
         self.fire_data_source = fire_data_source
         self.boundary = boundary
         self.target_pixel_size_in_meters = target_pixel_size_in_meters
-        self.target_epsg_code = target_epsg_code
+        self.target_srid = target_srid
         self.output_folder_path = output_folder_path
         self.output_folder_path.mkdir(parents=True, exist_ok=True)
+        self.max_nb_processes = max_nb_processes
+        gdal.UseExceptions()
     
     def generate_target_for_years_ranges(self, years_ranges: list) -> dict:
-        years_ranges_output_paths = {}
         
+        years = set()
         for years_range in years_ranges:
-            years_ranges_output_paths[(years_range[0], years_range[-1])] = self.generate_target_for_years(years_range, years_ranges_output_paths)
+            for year in years_range:
+                years.add(year)
         
-        return years_ranges_output_paths
+        logging.info("Downloading fire polygons for all years...")
+        with mp.Pool(processes=min(self.max_nb_processes, len(years))) as pool:
+            years_fire_polygons_paths = pool.map(self.download_year_fire_polygons, years)
         
+        years_fire_polygons_paths = {
+            year: year_fire_polygons_path for year, year_fire_polygons_path in years_fire_polygons_paths
+        }
+        
+        logging.info("Computing output bounds based on boundary...")
+        x_min, y_min, x_max, y_max = self.boundary.boundary.total_bounds
+        
+        output_raster_width_in_pixels = int((x_max - x_min) / self.target_pixel_size_in_meters)
+        output_raster_height_in_pixels = int((y_max - y_min) / self.target_pixel_size_in_meters)
+        
+        logging.info(f"Final raster will have dimensions ({output_raster_height_in_pixels} x {output_raster_width_in_pixels}) pixels")
+        
+        logging.info("Rasterizing fire polgyons for all years...")
+        args = [(year, x_min, y_max, output_raster_width_in_pixels, output_raster_height_in_pixels, years_fire_polygons_paths) for year in years]
+        with mp.Pool(processes=min(self.max_nb_processes, len(years))) as pool:
+            rasterized_fire_polygons_paths = pool.starmap(self.rasterize_fire_polygons, args)
+        
+        rasterized_fire_polygons_paths = {
+            year: rasterized_fire_polygons_path for year, rasterized_fire_polygons_path in rasterized_fire_polygons_paths
+        }
+        
+        logging.info("Combining rasters for all years ranges...")
+        args = [(years_range, x_min, y_max, output_raster_width_in_pixels, output_raster_height_in_pixels, rasterized_fire_polygons_paths) for years_range in years_ranges]
+        with mp.Pool(processes=min(self.max_nb_processes, len(years_ranges))) as pool:
+            years_ranges_combined_rasters = pool.starmap(self.combine_rasters, args)
+        
+        years_ranges_combined_rasters = {
+            years_range: combined_raster_path for years_range, combined_raster_path in years_ranges_combined_rasters
+        }
+        
+        return years_ranges_combined_rasters
     
-    def generate_target_for_years(self, years: range) -> Path:
-        years_fire_polygons = self.get_years_fire_polygons(years)
+    def download_year_fire_polygons(self, year: int) -> tuple:
+        year_fire_polygons = self.fire_data_source.download(year).to_crs(epsg=self.target_srid)
         
-        years_fire_polygon_shapefile_path = self.output_folder_path / Path(f"fire_polygons_{years[0]}_{years[-1]}.shp")
-        years_fire_polygons.to_file(years_fire_polygon_shapefile_path, driver='ESRI Shapefile')
+        output_path = self.output_folder_path / f"{year}.shp"
         
-        output_dataset_path = self.output_folder_path / Path(f"target_{years[0]}_{years[-1]}.nc")
+        year_fire_polygons.to_file(str(output_path.resolve()))
         
-        boundary_extent = self.boundary.boundary.total_bounds
-        x_min, y_min, x_max, y_max = boundary_extent
+        return year, output_path
+    
+    def rasterize_fire_polygons(
+        self,
+        year: int, 
+        x_min: float,
+        y_max: float,
+        output_raster_width_in_pixels: int,
+        output_raster_height_in_pixels: int,
+        years_fire_polygons_paths: dict
+    ) -> tuple:
+        logging.info(f"Rasterizing fire polgyons for year {year}...")
         
-        x_res = int((x_max - x_min) / self.target_pixel_size_in_meters)
-        y_res = int((y_max - y_min) / self.target_pixel_size_in_meters)
-        
-        driver = gdal.GetDriverByName('NetCDF')
-        output_target_dataset = driver.Create(str(output_dataset_path), x_res, y_res, 1, gdal.GDT_Byte)
-        output_target_dataset.SetGeoTransform((x_min, self.target_pixel_size_in_meters, 0, y_max, 0, -self.target_pixel_size_in_meters))
+        output_raster_path = self.output_folder_path / f"{year}.nc"
+        nb_bands = 1
+        output_raster_ds = gdal.GetDriverByName('netCDF').Create(str(output_raster_path.resolve()), output_raster_width_in_pixels, output_raster_height_in_pixels, nb_bands, gdal.GDT_Byte)
+        output_raster_ds.SetGeoTransform((x_min, self.target_pixel_size_in_meters, 0, y_max, 0, -self.target_pixel_size_in_meters))
+
         srs = osr.SpatialReference()
-        srs.ImportFromEPSG(self.target_epsg_code)
-        output_target_dataset.SetProjection(srs.ExportToWkt())
+        srs.ImportFromEPSG(self.target_srid)
+        output_raster_ds.SetProjection(srs.ExportToWkt())
+
+        output_band = output_raster_ds.GetRasterBand(1)
+        output_band.SetNoDataValue(0)
         
-        band = output_target_dataset.GetRasterBand(1)
-        band.SetNoDataValue(0)
-        band.Fill(0)
+        year_fire_polygons_path = years_fire_polygons_paths[year]
+        shp_ds = gdal.OpenEx(str(year_fire_polygons_path.resolve()), gdal.OF_VECTOR)
+        shp_layer = shp_ds.GetLayer()
         
-        years_fire_polygons_shapefile = gdal.OpenEx(str(years_fire_polygon_shapefile_path), gdal.OF_VECTOR)
-        years_fire_polygons_layer = years_fire_polygons_shapefile.GetLayer()
-        bands_to_rasterize = [1]
-        gdal.RasterizeLayer(output_target_dataset, bands_to_rasterize, years_fire_polygons_layer, burn_values=[1])
+        gdal.RasterizeLayer(
+            output_raster_ds,
+            [1],
+            shp_layer,
+            burn_values=[1],
+        )
         
-        output_target_dataset.FlushCache()
-        
-        return output_dataset_path
+        return year, output_raster_path
     
-    def get_years_fire_polygons(self, years: range) -> gpd.GeoDataFrame:
-        years_fire_polygons = None
+    def combine_rasters(
+        self, 
+        years_range: range,
+        x_min: float, 
+        y_max: float,
+        output_raster_width_in_pixels: int,
+        output_raster_height_in_pixels: int,
+        rasterized_fire_polygons_paths: dict
+    ) -> tuple:
+        logging.info(f"Combining rasters for years {years_range}...")
         
-        for year in years:
-            year_fire_polygons = self.fire_data_source.download(year)
-            year_fire_polygons = year_fire_polygons.to_crs(epsg=self.target_epsg_code)
-            year_fire_polygons = self.boundary.boundary.intersection(year_fire_polygons)
-            
-            if years_fire_polygons is None:
-                years_fire_polygons = year_fire_polygons
-            else:
-                years_fire_polygons = gpd.overlay(years_fire_polygons, year_fire_polygons, how='union')
+        raster_paths = [rasterized_fire_polygons_paths[year] for year in years_range]
         
-        return years_fire_polygons
+        combined_raster_data = np.zeros((output_raster_height_in_pixels, output_raster_width_in_pixels), dtype=np.uint8)
+
+        for raster_path in raster_paths:
+            raster_ds = gdal.Open(raster_path, gdal.GA_ReadOnly)
+            raster_band = raster_ds.GetRasterBand(1)
+            raster_data = raster_band.ReadAsArray()
+            combined_raster_data = np.maximum(combined_raster_data, raster_data)
+
+        driver = gdal.GetDriverByName('netCDF')
+        output_combined_raster_path = self.output_folder_path / f"target_{years_range[0]}_{years_range[-1]}" / "combined.nc"
+        output_combined_raster_path.parent.mkdir(parents=True, exist_ok=True)
+        nb_bands = 1
+        output_combined_raster_ds = driver.Create(str(output_combined_raster_path.resolve()), output_raster_width_in_pixels, output_raster_height_in_pixels, nb_bands, gdal.GDT_Byte)
+        srs = osr.SpatialReference()
+        srs.ImportFromEPSG(self.target_srid)
+        output_combined_raster_ds.SetProjection(srs.ExportToWkt())
+        output_combined_raster_ds.SetGeoTransform((x_min, self.target_pixel_size_in_meters, 0, y_max, 0, -self.target_pixel_size_in_meters))
+        output_band = output_combined_raster_ds.GetRasterBand(1)
+        output_band.Fill(0)
+        output_band.WriteArray(combined_raster_data)
+        
+        return (years_range[0], years_range[-1]), output_combined_raster_path

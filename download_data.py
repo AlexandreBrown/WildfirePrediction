@@ -75,10 +75,10 @@ def download_nasa_earth_data(cfg: DictConfig):
         tile_size_in_pixels=cfg.grid.tile_size_in_pixels,    
     )
     print("Tiling boundary...")
-    tiles = grid.get_tiles(canada.boundary)
+    tiles_boundaries = grid.get_tiles_boundaries(canada.boundary)
         
     nasa_earth_data_api.submit_tasks(
-        tiles=tiles,
+        tiles=tiles_boundaries,
         year_start_inclusive=cfg.periods.year_start_inclusive,
         year_end_inclusive=cfg.periods.year_end_inclusive,
         month_start_inclusive=cfg.periods.month_start_inclusive,

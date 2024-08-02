@@ -1,16 +1,13 @@
 import geopandas as gpd
-import numpy as np
 import logging
 from osgeo import gdal
-from osgeo import osr
 from pathlib import Path
-from typing import Optional
 
 
 logging.basicConfig(level=logging.INFO)
 
 
-class Tiles:
+class TilesPreprocessor:
     def __init__(
         self,
         raw_tiles_folder: Path,
@@ -18,10 +15,10 @@ class Tiles:
         tile_size_in_pixels: int,
         pixel_size_in_meters: int,
         output_folder: Path,
-        big_tiles: gpd.GeoDataFrame,
+        big_tiles_boundaries: gpd.GeoDataFrame,
         source_srs: int = 4326,
         target_srs: int = 3978,
-        resample_algorithm_continuous: str = "bilinear",
+        resample_algorithm_continuous: str = "lanczos",
         resample_algorithm_categorical: str = "nearest"
     ):
         self.layer_name = layer_name
@@ -33,12 +30,12 @@ class Tiles:
         self.resample_algorithm_continuous = resample_algorithm_continuous
         self.resample_algorithm_categorical = resample_algorithm_categorical
         self.raw_tiles_folder = raw_tiles_folder
-        self.big_tiles = big_tiles
+        self.big_tiles_boundaries = big_tiles_boundaries
         gdal.UseExceptions()
         
         self.output_folder.mkdir(parents=True, exist_ok=True)
     
-    def generate_preprocessed_tiles(self, data_type: str) -> list:
+    def preprocess_tiles(self, data_type: str) -> list:
         logging.info("Generating preprocessed tiles...")
         
         merged_raw_tiles_ds = self.merge_raw_tiles()
@@ -67,6 +64,9 @@ class Tiles:
         return gdal.BuildVRT(str(raw_tiles_merged_output_path.resolve()), formatted_raw_tiles_netcdf_paths, options=vrt_options)
 
     def get_no_data_value(self, band: gdal.Band):
+        if band.GetNoDataValue() is None:
+            return None
+        
         if band.DataType == gdal.GDT_Float32 or band.DataType == gdal.GDT_Float64:
             no_data_value = float(band.GetNoDataValue())
         else:
@@ -114,13 +114,13 @@ class Tiles:
         num_bands = input_ds.RasterCount
 
         output_files_paths = []
-        for index, row in self.big_tiles.iterrows():
+        for index, row in self.big_tiles_boundaries.iterrows():
             tile_output_path = self.make_tile(input_ds, num_bands, row, tile_folder, str(index))
             output_files_paths.append(tile_output_path)
     
         return output_files_paths
 
-    def make_tile(self, input_ds: gdal.Dataset, num_bands: int, row: gpd.GeoSeries, tile_folder: Path, tile_identifier: str) -> Optional[Path]:
+    def make_tile(self, input_ds: gdal.Dataset, num_bands: int, row: gpd.GeoSeries, tile_folder: Path, tile_identifier: str) -> Path:
         tile_geometry = row['geometry']
         bounds = tile_geometry.bounds
         minx, miny, maxx, maxy = bounds

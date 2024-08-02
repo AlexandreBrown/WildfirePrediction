@@ -8,7 +8,7 @@ class SquareMetersGrid:
         self.pixel_size_in_meters = pixel_size_in_meters
         self.tile_size_in_pixels = tile_size_in_pixels
     
-    def get_tiles(self, geometry: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    def get_tiles_boundaries(self, geometry: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         minx, miny, maxx, maxy = geometry.total_bounds
 
         self.tile_size_in_meters = self.pixel_size_in_meters *  self.tile_size_in_pixels

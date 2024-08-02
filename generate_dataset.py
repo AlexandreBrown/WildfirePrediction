@@ -15,8 +15,8 @@ logging.basicConfig(level=logging.INFO)
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
 def main(cfg : DictConfig):
     
-    boundary = CanadaBoundary(CanadaBoundaryDataSource(Path(cfg.boundaries.output_path)), target_epsg=cfg.projections.target_srs)
-    boundary.load(provinces=cfg.boundaries.provinces)
+    canada_boundary = CanadaBoundary(CanadaBoundaryDataSource(Path(cfg.boundaries.output_path)), target_epsg=cfg.projections.target_srs)
+    canada_boundary.load(provinces=cfg.boundaries.provinces)
     
     grid = SquareMetersGrid(
         pixel_size_in_meters=cfg.resolution.pixel_size_in_meters, 
@@ -26,7 +26,7 @@ def main(cfg : DictConfig):
     dynamic_sources = [ (source_name, source_values) for (source_name, source_values) in cfg.sources.get("dynamic", {}).items() ]
     static_sources = [ (source_name, source_values) for (source_name, source_values) in cfg.sources.get("static", {}).items() ]
     
-    dataset_generator = DatasetGenerator(boundary, grid, input_folder_path=Path(cfg.paths.input_folder_path), output_folder_path=Path(cfg.paths.output_folder_path), debug=cfg.debug)
+    dataset_generator = DatasetGenerator(canada_boundary, grid, input_folder_path=Path(cfg.paths.input_folder_path), output_folder_path=Path(cfg.paths.output_folder_path), debug=cfg.debug)
     
     dataset_generator.generate(
         dynamic_sources=dynamic_sources,
