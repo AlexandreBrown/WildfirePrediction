@@ -156,6 +156,8 @@ class DatasetGenerator:
         
                 band_index = 1
                 
+                stacked_ds_georeferenced = False
+                
                 for dynamic_source_name, dynamic_source_years_range, dynamic_source_layer in dynamic_data_to_stack:
                     for year in dynamic_source_years_range:
                         year_data_tile_paths = sources_yearly_data_index[year][dynamic_source_name]
@@ -166,6 +168,12 @@ class DatasetGenerator:
                             if year_data_tile_path.stem == tile_name:
                                 file_path = f"NETCDF:\"{year_data_tile_path.resolve()}\"{':' + dynamic_source_layer if dynamic_source_layer != '' else ''}"
                                 input_ds = gdal.Open(file_path)
+                                
+                                if not stacked_ds_georeferenced:
+                                    stacked_tile_ds.SetGeoTransform(input_ds.GetGeoTransform())
+                                    stacked_tile_ds.SetProjection(input_ds.GetProjection())
+                                    stacked_ds_georeferenced = True
+                                    
                                 input_band = input_ds.GetRasterBand(1)
                                 input_band_data = input_band.ReadAsArray()
                                 output_band.SetDescription(f"{dynamic_source_name}_{year}")
@@ -184,6 +192,12 @@ class DatasetGenerator:
                         if tile_path.stem == tile_name:
                             file_path = f"NETCDF:\"{tile_path.resolve()}\"{':' + layer if layer != '' else ''}"
                             input_ds = gdal.Open(file_path, gdal.GA_ReadOnly)
+                            
+                            if not stacked_ds_georeferenced:
+                                    stacked_tile_ds.SetGeoTransform(input_ds.GetGeoTransform())
+                                    stacked_tile_ds.SetProjection(input_ds.GetProjection())
+                                    stacked_ds_georeferenced = True
+                                    
                             input_band = input_ds.GetRasterBand(1)
                             input_band_data = input_band.ReadAsArray()
                             output_band.SetDescription(f"{static_source_name}")
