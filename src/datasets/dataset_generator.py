@@ -93,7 +93,7 @@ class DatasetGenerator:
     ):
         logging.info("Generating data...")
         
-        max_nb_processes = max(1, len(os.sched_getaffinity(0)) - 1)
+        max_nb_processes = max(1, (len(os.sched_getaffinity(0)) - 1)//2)
         
         logging.info(f"Max nb processes: {max_nb_processes}")
         
@@ -482,7 +482,7 @@ class DatasetGenerator:
         
         tmp_target_folder_path = tmp_path / Path("targets")
         
-        max_nb_processes = max(1, len(os.sched_getaffinity(0)) - 1)
+        max_nb_processes = max(1, (len(os.sched_getaffinity(0)) - 1)//2)
         
         logging.info(f"Max nb processes: {max_nb_processes}")
 
