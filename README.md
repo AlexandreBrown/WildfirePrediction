@@ -84,17 +84,20 @@ Static data is the data that does not change over time or for which we only have
 
 # End-To-End Pipeline
 ## Prerequisites
-### NASA Earthdata Account
-- Create an account : https://urs.earthdata.nasa.gov/users/new
-- This is required to download the NASA Earthdata data.
-### CDS Account 
-- Create an account : https://cds.climate.copernicus.eu/user/register
-- This is required to download the ERA5 data.
-- **Setup your account following this guide** : https://cds.climate.copernicus.eu/api-how-to
 ### Conda/Micromamba
 - Download and install conda or micromamba (recommended) : https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html
 - Create a new environment using the `environment.yaml` file from this repository (see [this guide](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html#conda-yaml-spec-files)).
 - Activate your new environment (see [this guide](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html#quickstarts)).
+
+### NASA Earthdata Account
+- Create an account : https://urs.earthdata.nasa.gov/users/new
+- This is required to download the NASA Earthdata data.
+
+### CDS Account
+- Create an ECMWF Account : https://accounts.ecmwf.int/auth/realms/ecmwf/login-actions/registration?client_id=cms-www&tab_id=vmMaA16DI6A
+- Login to CDS and setup your API access following this guide : https://cds-beta.climate.copernicus.eu/how-to-api 
+- This is required to download the ERA5 data.
+- Accept the terms of use for the ERA5 data (scroll down to terms of use section and click accept) : https://cds-beta.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=download
 
 ## Pipeline Steps
 ### Download Data
