@@ -20,7 +20,9 @@ projections:
 paths:
   input_folder_path: "data/download/"
   output_folder_path: "data/datasets/"
-sources:
+no_data_handling:
+  no_data_fill_value: -99_999
+input_data:
     dynamic:
       era5_reanalysis_100m_u_component_of_wind:
         layer: ""

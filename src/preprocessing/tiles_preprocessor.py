@@ -1,10 +1,9 @@
+import os
+from venv import logger
 import geopandas as gpd
-import logging
 from osgeo import gdal
 from pathlib import Path
-
-
-logging.basicConfig(level=logging.INFO)
+from multiprocessing import Pool
 
 
 class TilesPreprocessor:
@@ -31,22 +30,22 @@ class TilesPreprocessor:
         self.resample_algorithm_categorical = resample_algorithm_categorical
         self.raw_tiles_folder = raw_tiles_folder
         self.big_tiles_boundaries = big_tiles_boundaries
+        
         gdal.UseExceptions()
         
         self.output_folder.mkdir(parents=True, exist_ok=True)
     
     def preprocess_tiles(self, data_type: str) -> list:
-        logging.info("Generating preprocessed tiles...")
-        
+                
         merged_raw_tiles_ds = self.merge_raw_tiles()
-        reprojected_ds = self.resize_pixels_and_reproject(merged_raw_tiles_ds, data_type)
-        tiles_paths = self.make_tiles(reprojected_ds)
+        reprojected_raster_output_file = self.resize_pixels_and_reproject(merged_raw_tiles_ds, data_type)
+        tiles_paths = self.make_tiles(reprojected_raster_output_file)
         
-        logging.info(f"Created {len(tiles_paths)} tiles!")
         return tiles_paths
     
     def merge_raw_tiles(self) -> gdal.Dataset:
-        logging.info("Merging raw tiles...")
+        
+        logger.info("Merging raw tiles...")
         
         raw_tiles_merged_output_path = self.output_folder / "raw_tiles_merged.vrt"
         
@@ -74,8 +73,9 @@ class TilesPreprocessor:
         
         return no_data_value
 
-    def resize_pixels_and_reproject(self, input_ds: gdal.Dataset, data_type: str) -> gdal.Dataset:      
-        logging.info("Resizing pixels and reprojecting to target projection...")
+    def resize_pixels_and_reproject(self, input_ds: gdal.Dataset, data_type: str) -> Path:      
+
+        logger.info(f"Resizing pixels and reprojecting to srs {self.target_srs}...")
 
         reprojected_output_path = self.output_folder / "reprojected_merged.vrt"
         
@@ -95,32 +95,32 @@ class TilesPreprocessor:
             yRes=self.pixel_size_in_meters,
             resampleAlg=resample_algorithm,
             format='VRT',
-            multithread=True,
-            warpOptions=['NUM_THREADS=ALL_CPUS'],
             srcNodata=no_data_value,
             dstNodata=no_data_value
         )
         
-        warped_ds = gdal.Warp(str(reprojected_output_path.resolve()), input_ds, options=warp_options)
+        gdal.Warp(str(reprojected_output_path.resolve()), input_ds, options=warp_options)
 
-        return warped_ds
+        return reprojected_output_path
 
-    def make_tiles(self, input_ds: gdal.Dataset) -> list:
-        logging.info("Generating tiles...")
-
+    def make_tiles(self, input_dataset_file_path: Path) -> list:
         tile_folder = self.output_folder / "tiles/"
         tile_folder.mkdir(parents=True, exist_ok=True)
 
-        num_bands = input_ds.RasterCount
-
         output_files_paths = []
-        for index, row in self.big_tiles_boundaries.iterrows():
-            tile_output_path = self.make_tile(input_ds, num_bands, row, tile_folder, str(index))
-            output_files_paths.append(tile_output_path)
+        
+        args = [(input_dataset_file_path, row, tile_folder, str(index)) for index, row in self.big_tiles_boundaries.iterrows()]
+        
+        max_nb_processes = min(max(1, (len(os.sched_getaffinity(0)) - 1)), len(args))
+        
+        logger.info(f"Making tiles using {max_nb_processes} processes...")
+        
+        with Pool(processes=max_nb_processes) as pool:
+            output_files_paths = pool.starmap(self.make_tile, args)
     
         return output_files_paths
 
-    def make_tile(self, input_ds: gdal.Dataset, num_bands: int, row: gpd.GeoSeries, tile_folder: Path, tile_identifier: str) -> Path:
+    def make_tile(self, input_dataset_file_path: Path, row: gpd.GeoSeries, tile_folder: Path, tile_identifier: str) -> Path:
         tile_geometry = row['geometry']
         bounds = tile_geometry.bounds
         minx, miny, maxx, maxy = bounds
@@ -137,6 +137,8 @@ class TilesPreprocessor:
         )
         
         tile_nc_file = tile_folder / f"tile_{tile_identifier}.nc"
+        
+        input_ds = gdal.Open(str(input_dataset_file_path.resolve()), gdal.GA_ReadOnly)
         
         result = gdal.Translate(destName=str(tile_nc_file), srcDS=input_ds, options=translate_options)
         

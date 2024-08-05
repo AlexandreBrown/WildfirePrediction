@@ -7,9 +7,13 @@ from data_sources.canada_boundary_data_source import CanadaBoundaryDataSource
 from grid.square_meters_grid import SquareMetersGrid
 from datasets.dataset_generator import DatasetGenerator
 from pathlib import Path
+from preprocessing.no_data_value_preprocessor import NoDataValuePreprocessor
 
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
 
 
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
@@ -23,14 +27,20 @@ def main(cfg : DictConfig):
         tile_size_in_pixels=cfg.resolution.tile_size_in_pixels
     )
     
-    dynamic_sources = [ (source_name, source_values) for (source_name, source_values) in cfg.sources.get("dynamic", {}).items() ]
-    static_sources = [ (source_name, source_values) for (source_name, source_values) in cfg.sources.get("static", {}).items() ]
+    dynamic_input_data = [ (input_data_name, input_data_values) for (input_data_name, input_data_values) in cfg.input_data.get("dynamic", {}).items() ]
+    static_input_data = [ (input_data_name, input_data_values) for (input_data_name, input_data_values) in cfg.input_data.get("static", {}).items() ]
     
-    dataset_generator = DatasetGenerator(canada_boundary, grid, input_folder_path=Path(cfg.paths.input_folder_path), output_folder_path=Path(cfg.paths.output_folder_path), debug=cfg.debug)
+    no_data_fill_value = cfg.no_data_handling.no_data_fill_value
+    
+    logger.info(f"No data fil value : {no_data_fill_value}")
+    
+    no_data_value_preprocessor = NoDataValuePreprocessor(no_data_fill_value)
+    
+    dataset_generator = DatasetGenerator(canada_boundary, grid, input_folder_path=Path(cfg.paths.input_folder_path), output_folder_path=Path(cfg.paths.output_folder_path), debug=cfg.debug, no_data_value_preprocessor=no_data_value_preprocessor)
     
     dataset_generator.generate(
-        dynamic_sources=dynamic_sources,
-        static_sources=static_sources,
+        dynamic_input_data=dynamic_input_data,
+        static_input_data=static_input_data,
         periods_config=OmegaConf.to_container(cfg.periods),
         resolution_config=OmegaConf.to_container(cfg.resolution),
         projections_config=OmegaConf.to_container(cfg.projections)
