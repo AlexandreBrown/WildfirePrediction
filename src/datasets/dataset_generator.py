@@ -222,8 +222,8 @@ class DatasetGenerator:
         
         months_tiles = []
         for month in months_range:
-            month_tiles = self.get_dynamic_input_data_tiles_for_1_month(processed_data_year_output_folder_path, year, month, input_data_name, layer_name, input_data_values, big_tiles_boundaries, resolution_config, projections_config)
-            months_tiles.append(month_tiles)
+            tiles_path, tiles_output_path = self.get_dynamic_input_data_tiles_for_1_month(processed_data_year_output_folder_path, year, month, input_data_name, layer_name, input_data_values, big_tiles_boundaries, resolution_config, projections_config)
+            months_tiles.append((tiles_path, tiles_output_path))
 
         tiles_months_data = self.aggregate_dynamic_input_data_monthly(input_data_name, year, months_tiles, input_data_values)
         
@@ -312,6 +312,8 @@ class DatasetGenerator:
                 else:
                     raise ValueError(f"Unknown aggregation method: {input_data_values['aggregate_by']}")
                 
+                self.cleanup_month_data(tile_months_data)
+                
                 year_data_paths.append(tile_year_data_path)
             
             yearly_data[year] = {
@@ -319,6 +321,12 @@ class DatasetGenerator:
             }
         
         return yearly_data
+
+    def cleanup_month_data(self, tile_months_data: list):
+        for tile_month_data in tile_months_data:
+            month_parent_folder =  tile_month_data.parent.parent
+            if month_parent_folder.exists():
+                shutil.rmtree(month_parent_folder)
 
     def process_static_data(
         self, 
