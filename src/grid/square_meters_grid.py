@@ -27,4 +27,5 @@ class SquareMetersGrid:
         return self.tile_size_in_meters
     
     def get_tile_size_in_km(self):
-        return self.tile_size_in_meters / 1000
+        nb_meters_in_1_km = 1000
+        return self.get_tile_size_in_meters() / nb_meters_in_1_km

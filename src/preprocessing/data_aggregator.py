@@ -2,6 +2,7 @@ import numpy as np
 from osgeo import gdal
 from pathlib import Path
 from functools import partial
+from raster_io.read import get_extension
 
 
 def update_sum_count(sum_data, count_data, no_data_value, band_data):
@@ -25,6 +26,9 @@ def update_max_data(max_data, no_data_value, band_data):
 
 
 class DataAggregator:
+    def __init__(self, output_format: str):
+        self.output_format = output_format
+    
     def aggregate_bands_by_average(self, input_dataset_path: Path, output_folder_path: Path) -> Path:
         input_dataset = gdal.Open(str(input_dataset_path))
         output_dataset, output_band, output_file_path = self.create_aggregated_dataset_and_band(input_dataset, output_folder_path, input_dataset_path.stem)
@@ -72,9 +76,10 @@ class DataAggregator:
         xsize = self.get_xsize(input_dataset, has_sub_datasets)
         ysize = self.get_ysize(input_dataset, has_sub_datasets)
 
-        driver = gdal.GetDriverByName("netCDF")
+        driver = gdal.GetDriverByName(self.output_format)
         output_path.mkdir(parents=True, exist_ok=True)
-        output_file_path = output_path / f"{output_file_name_without_extension}.nc"
+        output_extension = get_extension(self.output_format)
+        output_file_path = output_path / f"{output_file_name_without_extension}{output_extension}"
         output_dataset = driver.Create(
             str(output_file_path.resolve()), 
             xsize=xsize, 

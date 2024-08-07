@@ -6,6 +6,7 @@ from pathlib import Path
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
 from osgeo import gdal, osr
+from raster_io.read import get_extension
 
 
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +23,8 @@ class FireOccurrenceTarget:
         target_pixel_size_in_meters: int,
         target_srid: int = 3978,
         output_folder_path: Path = Path("../data/target/"),
-        max_nb_processes: int = max(1, (len(os.sched_getaffinity(0)) - 1) //2)
+        max_nb_processes: int = max(1, (len(os.sched_getaffinity(0)) - 1) //2),
+        output_format: str = "GTiff"
     ):
         self.fire_data_source = fire_data_source
         self.boundary = boundary
@@ -31,6 +33,7 @@ class FireOccurrenceTarget:
         self.output_folder_path = output_folder_path
         self.output_folder_path.mkdir(parents=True, exist_ok=True)
         self.max_nb_processes = max_nb_processes
+        self.output_format = output_format
         gdal.UseExceptions()
     
     def generate_target_for_years_ranges(self, years_ranges: list) -> dict:
@@ -97,9 +100,10 @@ class FireOccurrenceTarget:
         output_raster_height_in_pixels: int,
         years_fire_polygons_paths: dict
     ) -> tuple:
-        output_raster_path = self.output_folder_path / f"{year}.nc"
+        output_extension = get_extension(self.output_format)
+        output_raster_path = self.output_folder_path / f"{year}{output_extension}"
         nb_bands = 1
-        output_raster_ds = gdal.GetDriverByName('netCDF').Create(str(output_raster_path.resolve()), output_raster_width_in_pixels, output_raster_height_in_pixels, nb_bands, gdal.GDT_Byte)
+        output_raster_ds = gdal.GetDriverByName(self.output_format).Create(str(output_raster_path.resolve()), output_raster_width_in_pixels, output_raster_height_in_pixels, nb_bands, gdal.GDT_Byte)
         output_raster_ds.SetGeoTransform((x_min, self.target_pixel_size_in_meters, 0, y_max, 0, -self.target_pixel_size_in_meters))
 
         srs = osr.SpatialReference()
@@ -141,8 +145,9 @@ class FireOccurrenceTarget:
             raster_data = raster_band.ReadAsArray()
             combined_raster_data = np.maximum(combined_raster_data, raster_data)
 
-        driver = gdal.GetDriverByName('netCDF')
-        output_combined_raster_path = self.output_folder_path / f"target_{years_range[0]}_{years_range[-1]}" / "combined.nc"
+        driver = gdal.GetDriverByName(self.output_format)
+        output_extension = get_extension(self.output_format)
+        output_combined_raster_path = self.output_folder_path / f"target_{years_range[0]}_{years_range[-1]}" / f"combined{output_extension}"
         output_combined_raster_path.parent.mkdir(parents=True, exist_ok=True)
         nb_bands = 1
         output_combined_raster_ds = driver.Create(str(output_combined_raster_path.resolve()), output_raster_width_in_pixels, output_raster_height_in_pixels, nb_bands, gdal.GDT_Byte)

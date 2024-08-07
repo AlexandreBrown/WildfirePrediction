@@ -14,6 +14,8 @@ from pathlib import Path
 from collections import defaultdict
 from osgeo import gdal
 from targets.fire_occurrence_target import FireOccurrenceTarget
+from raster_io.read import open_dataset
+from raster_io.read import get_extension
 
 
 logging.basicConfig(level=logging.INFO)
@@ -30,7 +32,9 @@ class DatasetGenerator:
         input_folder_path: Path,
         output_folder_path: Path,
         debug: bool,
-        no_data_value_preprocessor: NoDataValuePreprocessor
+        no_data_value_preprocessor: NoDataValuePreprocessor,
+        input_format: str,
+        output_format: str
     ):
         self.canada_boundary = canada_boundary
         self.grid = grid
@@ -38,6 +42,8 @@ class DatasetGenerator:
         self.output_folder_path = output_folder_path
         self.debug = debug
         self.no_data_value_preprocessor = no_data_value_preprocessor
+        self.input_format = input_format
+        self.output_format = output_format
     
     def generate(
         self,
@@ -58,13 +64,13 @@ class DatasetGenerator:
         try:
             target_years_ranges = self.generate_target_years_ranges(periods_config)
             
-            tmp_path = self.get_dataset_tmp_folder_path(dataset_folder_path)
+            tmp_folder_path = self.get_dataset_tmp_folder_path(dataset_folder_path)
             
-            self.process_input_data(dataset_folder_path, tmp_path, big_tiles_boundaries, dynamic_input_data, static_input_data, periods_config, resolution_config, projections_config, target_years_ranges)
+            self.process_input_data(dataset_folder_path, tmp_folder_path, big_tiles_boundaries, dynamic_input_data, static_input_data, periods_config, resolution_config, projections_config, target_years_ranges)
             
-            self.generate_targets(dataset_folder_path, tmp_path, target_years_ranges, big_tiles_boundaries, resolution_config, projections_config)
+            self.generate_targets(dataset_folder_path, tmp_folder_path, target_years_ranges, big_tiles_boundaries, resolution_config, projections_config)
             
-            self.cleanup_tmp_folder()
+            self.cleanup_tmp_folder(tmp_folder_path)
         except BaseException as e:
             logger.error(f"Error: {e}")
             self.cleanup_dataset_folder(dataset_folder_path)
@@ -109,8 +115,8 @@ class DatasetGenerator:
         dataset_folder_path: Path, 
         tmp_path: Path,
         big_tiles_boundaries: gpd.GeoDataFrame, 
-        dynamic_sources: list, 
-        static_sources: list, 
+        dynamic_input_data: list, 
+        static_input_data: list, 
         periods_config: dict, 
         resolution_config: dict, 
         projections_config: dict,
@@ -122,15 +128,15 @@ class DatasetGenerator:
         
         processed_data_folder_path.mkdir(parents=True, exist_ok=True)
         
-        input_data_yearly_data_index = self.process_dynamic_input_data(processed_data_folder_path, dynamic_sources, big_tiles_boundaries, periods_config, resolution_config, projections_config)
+        input_data_yearly_data_index = self.process_dynamic_input_data(processed_data_folder_path, dynamic_input_data, big_tiles_boundaries, periods_config, resolution_config, projections_config)
 
-        input_data_yearly_data_index = self.process_static_data(processed_data_folder_path, input_data_yearly_data_index, big_tiles_boundaries, static_sources, resolution_config, projections_config)
+        input_data_yearly_data_index = self.process_static_data(processed_data_folder_path, input_data_yearly_data_index, big_tiles_boundaries, static_input_data, resolution_config, projections_config)
 
         tiles_names = self.get_tiles_names(input_data_yearly_data_index)
 
-        self.stack_data(input_data_yearly_data_index, tiles_names, dataset_folder_path, periods_config, resolution_config, dynamic_sources, static_sources, target_years_ranges)
-        
         self.log_input_data_processing_results(dataset_folder_path, input_data_yearly_data_index)
+
+        self.stack_data(input_data_yearly_data_index, tiles_names, dataset_folder_path, periods_config, resolution_config, dynamic_input_data, static_input_data, target_years_ranges)        
     
     def process_dynamic_input_data(
         self, 
@@ -146,21 +152,21 @@ class DatasetGenerator:
         input_data_yearly_data = []
         for (input_data_name, input_data_values) in dynamic_input_data:
             logger.info(f"Processing {input_data_name}...")
-            input_data_yearly_data = self.get_dynamic_input_data_yearly_data(processed_data_folder_path, input_data_name, input_data_values, input_data_values['layer'], input_data_values['is_affected_by_fires'], big_tiles_boundaries, periods_config, resolution_config, projections_config)
-            input_data_yearly_data.append(input_data_yearly_data)
+            yearly_data = self.get_dynamic_input_data_yearly_data(processed_data_folder_path, input_data_name, input_data_values, input_data_values['layer'], input_data_values['is_affected_by_fires'], big_tiles_boundaries, periods_config, resolution_config, projections_config)
+            input_data_yearly_data.append(yearly_data)
 
         logger.info("Formatting input data yearly data index...")
         formatted_input_data_yearly_data_index = {}
                 
-        for input_data_yearly_data in input_data_yearly_data:
-            for year, input_data_yearly_data in input_data_yearly_data.items():
-                current_input_data_name = list(input_data_yearly_data.keys())[0]
-                current_source_yearly_data_paths = list(input_data_yearly_data.values())[0]
+        for yearly_data in input_data_yearly_data:
+            for year, year_data_dict in yearly_data.items():
+                current_input_data_name = list(year_data_dict.keys())[0]
+                current_input_data_yearly_data_paths = list(year_data_dict.values())[0]
                 
                 if formatted_input_data_yearly_data_index.get(year) is None:
                     formatted_input_data_yearly_data_index[year] = {}
                 
-                formatted_input_data_yearly_data_index[year][current_input_data_name] = current_source_yearly_data_paths
+                formatted_input_data_yearly_data_index[year][current_input_data_name] = current_input_data_yearly_data_paths
         
         return formatted_input_data_yearly_data_index
 
@@ -189,11 +195,11 @@ class DatasetGenerator:
 
     def get_dynamic_input_data_total_years_extent(self, periods_config: dict, is_affected_by_fires: bool) -> range:
         if is_affected_by_fires:
-            year_end_inclusive = periods_config['target_year_start_inclusive'] - 1
-            year_start_inclusive = year_end_inclusive - periods_config['input_data_affected_by_fires_period_length_in_years'] + 1
+            year_start_inclusive = periods_config['target_year_start_inclusive'] - periods_config['input_data_affected_by_fires_period_length_in_years']
+            year_end_inclusive = periods_config['target_year_end_inclusive'] - periods_config['target_period_length_in_years']
         else:
-            year_end_inclusive = periods_config['target_year_end_inclusive']
             year_start_inclusive = periods_config['target_year_start_inclusive']
+            year_end_inclusive = periods_config['target_year_end_inclusive']
         
         return range(year_start_inclusive, year_end_inclusive+1)
 
@@ -219,7 +225,7 @@ class DatasetGenerator:
             month_tiles = self.get_dynamic_input_data_tiles_for_1_month(processed_data_year_output_folder_path, year, month, input_data_name, layer_name, input_data_values, big_tiles_boundaries, resolution_config, projections_config)
             months_tiles.append(month_tiles)
 
-        tiles_months_data = self.aggregate_dynamic_input_data_monthly(months_tiles, input_data_values)
+        tiles_months_data = self.aggregate_dynamic_input_data_monthly(input_data_name, year, months_tiles, input_data_values)
         
         return year, tiles_months_data
     
@@ -232,13 +238,15 @@ class DatasetGenerator:
         
         tiles = TilesPreprocessor(
             raw_tiles_folder=raw_tiles_folder,
-            layer_name=layer_name,
             tile_size_in_pixels=resolution_config['tile_size_in_pixels'],
             pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
             output_folder=tiles_output_path,
             big_tiles_boundaries=big_tiles_boundaries,
-            source_srs=projections_config['source_srs'],
-            target_srs=projections_config['target_srs'],
+            input_format=self.input_format,
+            output_format=self.output_format,
+            layer_name=layer_name,
+            source_srid=projections_config['source_srid'],
+            target_srid=projections_config['target_srid'],
             resample_algorithm_continuous=resolution_config['resample_algorithm_continuous'],
             resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
         )
@@ -252,7 +260,7 @@ class DatasetGenerator:
     def aggregate_dynamic_input_data_monthly(self, input_data_name: str, year: int, months_tiles: list, input_data_values: dict) -> dict:
         logger.info(f"{input_data_name}: Year: {year} Aggregating data monthly...")
         
-        month_data_aggregator = DataAggregator()
+        month_data_aggregator = DataAggregator(output_format=self.output_format)
     
         tiles_months_data = defaultdict(list)
         
@@ -279,7 +287,7 @@ class DatasetGenerator:
         return tiles_months_data
 
     def aggregate_dynamic_input_data_yearly(self, input_data_name: str, input_data_values: dict, months_data_for_each_year: list, processed_data_folder_path: Path) -> dict:
-        year_data_aggregator = DataAggregator()
+        year_data_aggregator = DataAggregator(output_format=self.output_format)
 
         logger.info(f"{input_data_name} Aggregating data yearly...")
         
@@ -336,13 +344,15 @@ class DatasetGenerator:
             
             tiles = TilesPreprocessor(
                 raw_tiles_folder=raw_tiles_folder,
-                layer_name=layer_name,
                 tile_size_in_pixels=resolution_config['tile_size_in_pixels'],
                 pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
                 output_folder=tiling_output_folder_path,
                 big_tiles_boundaries=big_tiles_boundaries,
-                source_srs=projections_config['source_srs'],
-                target_srs=projections_config['target_srs'],
+                input_format=self.input_format,
+                output_format=self.output_format,
+                layer_name=layer_name,
+                source_srid=projections_config['source_srid'],
+                target_srid=projections_config['target_srid'],
                 resample_algorithm_continuous=resolution_config['resample_algorithm_continuous'],
                 resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
             )
@@ -387,7 +397,8 @@ class DatasetGenerator:
                     is_affected_by_fires = dynamic_input_data_values['is_affected_by_fires']
                     dynamic_input_data_years_range = self.get_dynamic_input_data_years_range_for_target_years_range(target_years_range, periods_config, is_affected_by_fires)
                     number_of_bands += len(dynamic_input_data_years_range)
-                    dynamic_data_to_stack.append((dynamic_input_data_name, dynamic_input_data_years_range, dynamic_input_data_values['layer']))
+                    layer = dynamic_input_data_values['layer']
+                    dynamic_data_to_stack.append((dynamic_input_data_name, dynamic_input_data_years_range, layer))
                 
                 for static_input_data_name, _ in static_input_data:
                     number_of_bands += 1
@@ -396,8 +407,9 @@ class DatasetGenerator:
                 y_size = resolution_config['tile_size_in_pixels']
                 data_type = gdal.GDT_Float32
 
-                driver = gdal.GetDriverByName('netCDF')
-                stacked_tile_data_output_path = stacked_input_data_folder_path / Path(f"{tile_name}.nc")
+                driver = gdal.GetDriverByName(self.output_format)
+                output_extension = get_extension(self.output_format)
+                stacked_tile_data_output_path = stacked_input_data_folder_path / Path(f"{tile_name}{output_extension}")
                 stacked_tile_ds = driver.Create(stacked_tile_data_output_path, x_size, y_size, number_of_bands, data_type)
         
                 band_index = 1
@@ -412,8 +424,7 @@ class DatasetGenerator:
                         
                         for year_data_tile_path in year_data_tile_paths:
                             if year_data_tile_path.stem == tile_name:
-                                file_path = f"NETCDF:\"{year_data_tile_path.resolve()}\"{':' + dynamic_input_data_layer if dynamic_input_data_layer != '' else ''}"
-                                input_ds = gdal.Open(file_path)
+                                input_ds = open_dataset(year_data_tile_path, dynamic_input_data_layer, read_only=True)
                                 
                                 if not stacked_ds_georeferenced:
                                     stacked_tile_ds.SetGeoTransform(input_ds.GetGeoTransform())
@@ -425,6 +436,7 @@ class DatasetGenerator:
                                 output_band.SetDescription(f"{dynamic_input_data_name}_{year}")
                                 input_band_no_data_value = input_band.GetNoDataValue()
                                 input_band_data = self.no_data_value_preprocessor.replace_no_data_values(input_band_data, input_band_no_data_value)
+                                output_band.SetNoDataValue(self.no_data_value_preprocessor.get_no_data_fill_value())
                                 output_band.WriteArray(input_band_data)
                                 stacked_tile_ds.FlushCache()
                                 break
@@ -434,13 +446,12 @@ class DatasetGenerator:
                 for static_input_data_name, static_input_data_values in static_input_data:
                     output_band = stacked_tile_ds.GetRasterBand(band_index)
                     static_data_tile_paths = input_data_yearly_data_index[target_years_range[0]][static_input_data_name]
-                    layer = static_input_data_values['layer']
                     
                     for tile_path in static_data_tile_paths:
                         if tile_path.stem == tile_name:
-                            file_path = f"NETCDF:\"{tile_path.resolve()}\"{':' + layer if layer != '' else ''}"
-                            input_ds = gdal.Open(file_path, gdal.GA_ReadOnly)
-                            
+                            layer = static_input_data_values['layer']
+                            input_ds = open_dataset(tile_path, layer, read_only=True)
+
                             if not stacked_ds_georeferenced:
                                     stacked_tile_ds.SetGeoTransform(input_ds.GetGeoTransform())
                                     stacked_tile_ds.SetProjection(input_ds.GetProjection())
@@ -451,11 +462,12 @@ class DatasetGenerator:
                             output_band.SetDescription(f"{static_input_data_name}")
                             input_band_no_data_value = input_band.GetNoDataValue()
                             input_band_data = self.no_data_value_preprocessor.replace_no_data_values(input_band_data, input_band_no_data_value)    
+                            output_band.SetNoDataValue(self.no_data_value_preprocessor.get_no_data_fill_value())
                             output_band.WriteArray(input_band_data)
                             stacked_tile_ds.FlushCache()
                             break
                     
-                    band_index += 1    
+                    band_index += 1
 
     def get_dynamic_input_data_years_range_for_target_years_range(self, target_years_range: range, periods_config: dict, is_affected_by_fires: bool) -> range:
         if is_affected_by_fires:
@@ -493,9 +505,10 @@ class DatasetGenerator:
             fire_data_source=fire_data_source,
             boundary=self.canada_boundary,
             target_pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
-            target_srid=projections_config['target_srs'],
+            target_srid=projections_config['target_srid'],
             output_folder_path=tmp_target_folder_path,
-            max_nb_processes=max_nb_processes
+            max_nb_processes=max_nb_processes,
+            output_format=self.output_format
         )
         
         target_ranges_combined_raster = target.generate_target_for_years_ranges(target_years_ranges)
@@ -510,13 +523,15 @@ class DatasetGenerator:
             
             tiles_preprocessor = TilesPreprocessor(
                 raw_tiles_folder=combined_raster_path.parent,
-                layer_name="",
                 tile_size_in_pixels=resolution_config['tile_size_in_pixels'],
                 pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
                 output_folder=tiles_preprocessing_output_folder,
                 big_tiles_boundaries=big_tiles_boundaries,
-                source_srs=projections_config['target_srs'],
-                target_srs=projections_config['target_srs'],
+                input_format=self.output_format,
+                output_format=self.output_format,
+                layer_name="",
+                source_srid=projections_config['target_srid'],
+                target_srid=projections_config['target_srid'],
                 resample_algorithm_continuous=resolution_config['resample_algorithm_continuous'],
                 resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
             )
