@@ -1,9 +1,9 @@
 debug: true
 periods:
-  target_year_start_inclusive: 2011
-  target_year_end_inclusive: 2012
+  target_year_start_inclusive: 2001
+  target_year_end_inclusive: 2023
   month_start_inclusive: 5
-  month_end_inclusive: 6
+  month_end_inclusive: 10
   target_period_length_in_years: 1
   input_data_affected_by_fires_period_length_in_years: 1
 boundaries:
@@ -25,41 +25,41 @@ input_format: "netCDF"
 output_format: "GTiff"
 input_data:
     dynamic:
-      # era5_reanalysis_100m_u_component_of_wind:
-      #   layer: ""
-      #   aggregate_by: "average"
-      #   data_type: "continuous"
-      #   is_affected_by_fires: false
-      # era5_reanalysis_100m_v_component_of_wind:
-      #   layer: ""
-      #   aggregate_by: "average"
-      #   data_type: "continuous"
-      #   is_affected_by_fires: false
-      # era5_reanalysis_2m_temperature:
-      #   layer: ""
-      #   aggregate_by: "average"
-      #   data_type: "continuous"
-      #   is_affected_by_fires: false
-      # era5_reanalysis_potential_evaporation:
-      #   layer: ""
-      #   aggregate_by: "average"
-      #   data_type: "continuous"
-      #   is_affected_by_fires: false
-      # era5_reanalysis_surface_net_solar_radiation:
-      #   layer: ""
-      #   aggregate_by: "average"
-      #   data_type: "continuous"
-      #   is_affected_by_fires: false
-      # era5_reanalysis_surface_runoff:
-      #   layer: ""
-      #   aggregate_by: "average"
-      #   data_type: "continuous"
-      #   is_affected_by_fires: false
-      # era5_reanalysis_total_precipitation:
-      #   layer: ""
-      #   aggregate_by: "average"
-      #   data_type: "continuous"
-      #   is_affected_by_fires: false
+      era5_reanalysis_100m_u_component_of_wind:
+        layer: ""
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: false
+      era5_reanalysis_100m_v_component_of_wind:
+        layer: ""
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: false
+      era5_reanalysis_2m_temperature:
+        layer: ""
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: false
+      era5_reanalysis_potential_evaporation:
+        layer: ""
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: false
+      era5_reanalysis_surface_net_solar_radiation:
+        layer: ""
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: false
+      era5_reanalysis_surface_runoff:
+        layer: ""
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: false
+      era5_reanalysis_total_precipitation:
+        layer: ""
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: false
       MOD13Q1_061__250m_16_days_NDVI:
         layer: "_250m_16_days_NDVI"
         aggregate_by: "average"
@@ -70,37 +70,37 @@ input_data:
         aggregate_by: "average"
         data_type: "continuous"
         is_affected_by_fires: true
-    #   MOD44B_061_Percent_NonVegetated:
-    #     layer: "Percent_NonVegetated"
-    #     aggregate_by: "average"
-    #     data_type: "continuous"
-    #     is_affected_by_fires: true
-    #   MOD44B_061_Percent_NonTree_Vegetation:
-    #     layer: "Percent_NonTree_Vegetation"
-    #     aggregate_by: "average"
-    #     data_type: "continuous"
-    #     is_affected_by_fires: true
-    #   MOD44B_061_Percent_Tree_Cover:
-    #     layer: "Percent_Tree_Cover"
-    #     aggregate_by: "average"
-    #     data_type: "continuous"
-    #     is_affected_by_fires: true
-    #   MOD15A2H_061_Lai_500m:
-    #     layer: "Lai_500m"
-    #     aggregate_by: "average"
-    #     data_type: "continuous"
-    #     is_affected_by_fires: true
-    #   MOD44W_061_water_mask:
-    #     layer: "water_mask"
-    #     aggregate_by: "max"
-    #     data_type: "categorical"
-    #     is_affected_by_fires: true
-    #   MOD14A2_061_FireMask:
-    #     layer: "FireMask"
-    #     aggregate_by: "max"
-    #     data_type: "categorical"
-    #     is_affected_by_fires: true
-    # static:
-    #   SRTMGL3_NC_003_SRTMGL3_DEM:
-    #     layer: ""
-    #     data_type: "continuous"
+      MOD44B_061_Percent_NonVegetated:
+        layer: "Percent_NonVegetated"
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: true
+      MOD44B_061_Percent_NonTree_Vegetation:
+        layer: "Percent_NonTree_Vegetation"
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: true
+      MOD44B_061_Percent_Tree_Cover:
+        layer: "Percent_Tree_Cover"
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: true
+      MOD15A2H_061_Lai_500m:
+        layer: "Lai_500m"
+        aggregate_by: "average"
+        data_type: "continuous"
+        is_affected_by_fires: true
+      MOD44W_061_water_mask:
+        layer: "water_mask"
+        aggregate_by: "max"
+        data_type: "categorical"
+        is_affected_by_fires: true
+      MOD14A2_061_FireMask:
+        layer: "FireMask"
+        aggregate_by: "max"
+        data_type: "categorical"
+        is_affected_by_fires: true
+    static:
+      SRTMGL3_NC_003_SRTMGL3_DEM:
+        layer: ""
+        data_type: "continuous"

@@ -1,8 +1,8 @@
 periods:
-    year_start_inclusive: 2010
-    year_end_inclusive: 2012
+    year_start_inclusive: 2000
+    year_end_inclusive: 2023
     month_start_inclusive: 5
-    month_end_inclusive: 6
+    month_end_inclusive: 10
 boundaries:
     output_path: "data/canada_boundary/"
     provinces: ["NL", "PE", "NS", "NB", "QC", "ON", "MB", "SK", "AB", "BC"]
@@ -10,34 +10,34 @@ grid:
     pixel_size_in_meters: 500
     tile_size_in_pixels: 512
 sources:
-    # era5:
-    #     product_type: "reanalysis"
-    #     dataset: "reanalysis-era5-single-levels-monthly-means"
-    #     variables:
-    #         - 100m_u_component_of_wind
-    #         - 100m_v_component_of_wind 
-    #         - 2m_temperature
-    #         - potential_evaporation
-    #         - surface_net_solar_radiation
-    #         - surface_runoff
-    #         - total_precipitation 
+    era5:
+        product_type: "reanalysis"
+        dataset: "reanalysis-era5-single-levels-monthly-means"
+        variables:
+            - 100m_u_component_of_wind
+            - 100m_v_component_of_wind 
+            - 2m_temperature
+            - potential_evaporation
+            - surface_net_solar_radiation
+            - surface_runoff
+            - total_precipitation 
     nasa_earth_data:
         products_layers:
             - MOD13Q1.061:
                 - _250m_16_days_NDVI
                 - _250m_16_days_EVI
-            # - MOD44B.061:
-            #     - Percent_NonVegetated
-            #     - Percent_NonTree_Vegetation
-            #     - Percent_Tree_Cover
-            # - MOD15A2H.061:
-            #     - Lai_500m
-            # - MOD44W.061:
-            #     - water_mask
-            # - MOD14A2.061:
-            #     - FireMask
-            # - SRTMGL3_NC.003:
-            #     - SRTMGL3_DEM
+            - MOD44B.061:
+                - Percent_NonVegetated
+                - Percent_NonTree_Vegetation
+                - Percent_Tree_Cover
+            - MOD15A2H.061:
+                - Lai_500m
+            - MOD44W.061:
+                - water_mask
+            - MOD14A2.061:
+                - FireMask
+            - SRTMGL3_NC.003:
+                - SRTMGL3_DEM
 logs:
     nasa_earth_data_logs_folder_path: "logs/download_data/20240711-081839/"
 outputs:
