@@ -1,18 +1,11 @@
+import multiprocessing as mp
 import os
 import geopandas as gpd
-import logging
 from osgeo import gdal
 from typing import Optional
 from pathlib import Path
-from multiprocessing import Pool
 from raster_io.read import get_extension
 from raster_io.read import get_formatted_file_path
-
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler())
 
 
 class TilesPreprocessor:
@@ -58,11 +51,7 @@ class TilesPreprocessor:
     
     def merge_raw_tiles(self) -> gdal.Dataset:
         
-        logger.info("Merging raw tiles...")
-        
         raw_tiles_paths = self.get_raw_tiles_paths()
-        
-        logger.info(f"Found {len(raw_tiles_paths)} raw tiles!")
         
         raw_tile_ds = gdal.Open(raw_tiles_paths[0], gdal.GA_ReadOnly)
         raw_band = raw_tile_ds.GetRasterBand(1)
@@ -94,8 +83,6 @@ class TilesPreprocessor:
         return no_data_value
 
     def resize_pixels_and_reproject(self, input_ds: gdal.Dataset, data_type: str) -> Path:      
-
-        logger.info(f"Resizing pixels and reprojecting to srid {self.target_srid}...")
 
         resampe_algorithm = self.get_resample_algorithm(data_type)
         
@@ -139,16 +126,12 @@ class TilesPreprocessor:
     def make_tiles(self, input_dataset_file_path: Path) -> list:
         tile_folder = self.output_folder / "tiles/"
         tile_folder.mkdir(parents=True, exist_ok=True)
-
-        output_files_paths = []
         
         args = [(input_dataset_file_path, row, tile_folder, str(index)) for index, row in self.big_tiles_boundaries.iterrows()]
         
-        max_nb_processes = min(max(1, (len(os.sched_getaffinity(0)) - 1)), len(args))
+        max_nb_processes = min(max(1, (len(os.sched_getaffinity(0)) - 1) //2), len(args))
         
-        logger.info(f"Making tiles using {max_nb_processes} processes...")
-        
-        with Pool(processes=max_nb_processes) as pool:
+        with mp.Pool(processes=max_nb_processes) as pool:
             output_files_paths = pool.starmap(self.make_tile, args)
     
         return output_files_paths

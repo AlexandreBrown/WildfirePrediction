@@ -147,19 +147,23 @@ class DatasetGenerator:
         resolution_config: dict, 
         projections_config: dict
     ) -> dict:
-        logger.info(f"Processing {len(dynamic_input_data)} dynamic input data...")
                         
+        args = [ (processed_data_folder_path, input_data_name, input_data_values, input_data_values['layer'], input_data_values['is_affected_by_fires'], big_tiles_boundaries, periods_config, resolution_config, projections_config) for input_data_name, input_data_values in dynamic_input_data]
+        
+        nb_threads = min(max(1, (len(os.sched_getaffinity(0)) - 1) // 2), len(args))
+        
+        logger.info(f"Processing {len(dynamic_input_data)} dynamic input data using {nb_threads} threads...")
+        
         input_data_yearly_data = []
-        for (input_data_name, input_data_values) in dynamic_input_data:
-            logger.info(f"Processing {input_data_name}...")
-            yearly_data = self.get_dynamic_input_data_yearly_data(processed_data_folder_path, input_data_name, input_data_values, input_data_values['layer'], input_data_values['is_affected_by_fires'], big_tiles_boundaries, periods_config, resolution_config, projections_config)
-            input_data_yearly_data.append(yearly_data)
+        for arg in args:
+            input_data_yearly_data.append(self.get_dynamic_input_data_yearly_data(*arg))
 
-        logger.info("Formatting input data yearly data index...")
+        logger.info(f"Processed {len(dynamic_input_data)} dynamic input!")
+
         formatted_input_data_yearly_data_index = {}
                 
-        for yearly_data in input_data_yearly_data:
-            for year, year_data_dict in yearly_data.items():
+        for yearly_data_for_1_input_data in input_data_yearly_data:
+            for year, year_data_dict in yearly_data_for_1_input_data.items():
                 current_input_data_name = list(year_data_dict.keys())[0]
                 current_input_data_yearly_data_paths = list(year_data_dict.values())[0]
                 
@@ -184,14 +188,18 @@ class DatasetGenerator:
     ) -> dict:
         year_range = self.get_dynamic_input_data_total_years_extent(periods_config, is_affected_by_fires)
         
-        logger.info(f"{input_data_name}: Year range {year_range}")
-        
-        months_data_for_each_year = []
+        yearly_data_for_1_input_data = {}
+
         for year in year_range:
-            months_data_for_1_year = self.get_dynamic_input_data_tiles_months_data_for_1_year(processed_data_folder_path / Path(f"{year}"), year, input_data_name, layer_name, input_data_values, big_tiles_boundaries, periods_config, resolution_config, projections_config)
-            months_data_for_each_year.append(months_data_for_1_year)
-            
-        return self.aggregate_dynamic_input_data_yearly(input_data_name, input_data_values, months_data_for_each_year, processed_data_folder_path)
+            tiles_months_data, tiles_months_output_paths = self.get_dynamic_input_data_tiles_months_data_for_1_year(processed_data_folder_path / Path(f"{year}"), year, input_data_name, layer_name, input_data_values, big_tiles_boundaries, periods_config, resolution_config, projections_config)
+            self.aggregate_dynamic_input_data_yearly(input_data_name, input_data_values, yearly_data_for_1_input_data, processed_data_folder_path, year, tiles_months_data)
+            self.cleanup_months_data(tiles_months_output_paths)
+        
+        return yearly_data_for_1_input_data
+
+    def cleanup_months_data(self, months_data_paths: dict):
+        for month_data_path in months_data_paths:
+            shutil.rmtree(month_data_path)
 
     def get_dynamic_input_data_total_years_extent(self, periods_config: dict, is_affected_by_fires: bool) -> range:
         if is_affected_by_fires:
@@ -215,22 +223,23 @@ class DatasetGenerator:
         resolution_config: dict,
         projections_config: dict
     ) -> tuple:
+        
+        logger.info(f"Processing {input_data_name} for year {year}...")
 
         months_range = range(periods_config['month_start_inclusive'], periods_config['month_end_inclusive'] + 1)
         
-        logger.info(f"{input_data_name}: Year: {year} Getting tiles for each month for range {months_range}...")
-        
         months_tiles = []
+        tiles_months_output_paths = []
         for month in months_range:
             tiles_path, tiles_output_path = self.get_dynamic_input_data_tiles_for_1_month(processed_data_year_output_folder_path, year, month, input_data_name, layer_name, input_data_values, big_tiles_boundaries, resolution_config, projections_config)
             months_tiles.append((tiles_path, tiles_output_path))
+            tiles_months_output_paths.append(tiles_output_path)
 
         tiles_months_data = self.aggregate_dynamic_input_data_monthly(input_data_name, year, months_tiles, input_data_values)
         
-        return year, tiles_months_data
+        return tiles_months_data, tiles_months_output_paths
     
     def get_dynamic_input_data_tiles_for_1_month(self, processed_data_year_output_folder_path: Path, year: int, month: int, input_data_name: str, layer_name: str, input_data_values: dict, big_tiles_boundaries: gpd.GeoDataFrame, resolution_config: dict, projections_config: dict) -> tuple:
-        logger.info(f"{input_data_name}: Year: {year} Month: {month}")
             
         raw_tiles_folder = self.input_folder_path / Path(f"{year}") / Path(f"{month}") / Path(f"{input_data_name}")
         
@@ -251,14 +260,14 @@ class DatasetGenerator:
             resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
         )
         
-        logger.info(f"{input_data_name}: Preprocessing tiles for year {year} and month {month}...")
         tiles_path = tiles.preprocess_tiles(data_type=input_data_values['data_type'])
-        logger.info(f"{input_data_name}: Generated {len(tiles_path)} tiles for year {year} and month {month}!")
+        
+        logger.info(f"Generated {len(tiles_path)} tiles for {input_data_name} for year {year} and month {month}!")
         
         return tiles_path, tiles_output_path
     
-    def aggregate_dynamic_input_data_monthly(self, input_data_name: str, year: int, months_tiles: list, input_data_values: dict) -> dict:
-        logger.info(f"{input_data_name}: Year: {year} Aggregating data monthly...")
+    def aggregate_dynamic_input_data_monthly(self, input_data_name: str, year: int, months_tiles: list, input_data_values: dict) -> dict:        
+        logger.info(f"Aggregating {input_data_name} monthly for year {year}...")
         
         month_data_aggregator = DataAggregator(output_format=self.output_format)
     
@@ -286,47 +295,34 @@ class DatasetGenerator:
         
         return tiles_months_data
 
-    def aggregate_dynamic_input_data_yearly(self, input_data_name: str, input_data_values: dict, months_data_for_each_year: list, processed_data_folder_path: Path) -> dict:
+    def aggregate_dynamic_input_data_yearly(self, input_data_name: str, input_data_values: dict, yearly_data: dict, processed_data_folder_path: Path, year: int, tiles_months_data: dict):
+        logger.info(f"Aggregating {input_data_name} yearly for year {year}...")
+        
         year_data_aggregator = DataAggregator(output_format=self.output_format)
 
-        logger.info(f"{input_data_name} Aggregating data yearly...")
+        year_aggregated_output_folder_path = processed_data_folder_path / Path(f"{year}") / Path(f"{input_data_name}") / Path("year_aggregated_data")
         
-        yearly_data = {}
-
-        for (year, tiles_months_data) in months_data_for_each_year:
-            year_aggregated_output_folder_path = processed_data_folder_path / Path(f"{year}") / Path(f"{input_data_name}") / Path("year_aggregated_data")
-            
-            year_data_paths = []
-            
-            for tile_name, tile_months_data in tiles_months_data.items():
-                if input_data_values['aggregate_by'] == 'average':
-                    tile_year_data_path = year_data_aggregator.aggregate_files_by_average(
-                        input_datasets_paths=tile_months_data,
-                        output_folder_path=year_aggregated_output_folder_path
-                    )
-                elif input_data_values['aggregate_by'] == 'max':
-                    tile_year_data_path = year_data_aggregator.aggregate_files_by_max(
-                        input_datasets_paths=tile_months_data,
-                        output_folder_path=year_aggregated_output_folder_path
-                    )
-                else:
-                    raise ValueError(f"Unknown aggregation method: {input_data_values['aggregate_by']}")
-                
-                self.cleanup_month_data(tile_months_data)
-                
-                year_data_paths.append(tile_year_data_path)
-            
-            yearly_data[year] = {
-                input_data_name: year_data_paths
-            }
+        year_tiles_data_paths = []
         
-        return yearly_data
-
-    def cleanup_month_data(self, tile_months_data: list):
-        for tile_month_data in tile_months_data:
-            month_parent_folder =  tile_month_data.parent.parent
-            if month_parent_folder.exists():
-                shutil.rmtree(month_parent_folder)
+        for tile_name, tile_months_data in tiles_months_data.items():
+            if input_data_values['aggregate_by'] == 'average':
+                tile_year_data_path = year_data_aggregator.aggregate_files_by_average(
+                    input_datasets_paths=tile_months_data,
+                    output_folder_path=year_aggregated_output_folder_path
+                )
+            elif input_data_values['aggregate_by'] == 'max':
+                tile_year_data_path = year_data_aggregator.aggregate_files_by_max(
+                    input_datasets_paths=tile_months_data,
+                    output_folder_path=year_aggregated_output_folder_path
+                )
+            else:
+                raise ValueError(f"Unknown aggregation method: {input_data_values['aggregate_by']}")
+            
+            year_tiles_data_paths.append(tile_year_data_path)
+        
+        yearly_data[year] = {
+            input_data_name: year_tiles_data_paths
+        }
 
     def process_static_data(
         self, 

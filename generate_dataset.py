@@ -19,6 +19,8 @@ logger.addHandler(logging.StreamHandler())
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
 def main(cfg : DictConfig):
     
+    logger.info(f"Debug : {cfg.debug}")
+        
     canada_boundary = CanadaBoundary(CanadaBoundaryDataSource(Path(cfg.boundaries.output_path)), target_epsg=cfg.projections.target_srid)
     canada_boundary.load(provinces=cfg.boundaries.provinces)
     
