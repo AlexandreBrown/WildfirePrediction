@@ -1,4 +1,5 @@
 import numpy as np
+import asyncio
 from osgeo import gdal
 from pathlib import Path
 from functools import partial
@@ -29,9 +30,9 @@ class DataAggregator:
     def __init__(self, output_format: str):
         self.output_format = output_format
     
-    def aggregate_bands_by_average(self, input_dataset_path: Path, output_folder_path: Path) -> Path:
+    async def aggregate_bands_by_average(self, input_dataset_path: Path, output_folder_path: Path) -> Path:
         input_dataset = gdal.Open(str(input_dataset_path))
-        output_dataset, output_band, output_file_path = self.create_aggregated_dataset_and_band(input_dataset, output_folder_path, input_dataset_path.stem)
+        output_dataset, output_band, output_file_path = await asyncio.to_thread(self.create_aggregated_dataset_and_band, input_dataset, output_folder_path, input_dataset_path.stem)
         
         no_data_value = output_band.GetNoDataValue()
         sum_data = np.zeros((output_dataset.RasterYSize, output_dataset.RasterXSize), dtype=np.float32)
@@ -39,20 +40,20 @@ class DataAggregator:
 
         on_band_read = partial(update_sum_count, sum_data=sum_data, count_data=count_data, no_data_value=no_data_value)
         get_final_output_band_data = partial(compute_avg_data, sum_data=sum_data, count_data=count_data, no_data_value=no_data_value)
-        self.aggregate_bands(input_dataset, output_band, on_band_read, get_final_output_band_data, output_dataset)
+        await asyncio.to_thread(self.aggregate_bands, input_dataset, output_band, on_band_read, get_final_output_band_data, output_dataset)
         
         return output_file_path
     
-    def aggregate_bands_by_max(self, input_dataset_path: Path, output_folder_path: Path) -> Path:
+    async def aggregate_bands_by_max(self, input_dataset_path: Path, output_folder_path: Path) -> Path:
         input_dataset = gdal.Open(str(input_dataset_path))
-        output_dataset, output_band, output_file_path = self.create_aggregated_dataset_and_band(input_dataset, output_folder_path, input_dataset_path.stem)
+        output_dataset, output_band, output_file_path = await asyncio.to_thread(self.create_aggregated_dataset_and_band, input_dataset, output_folder_path, input_dataset_path.stem)
         
         no_data_value = output_band.GetNoDataValue()
         max_data = np.zeros((output_dataset.RasterYSize, output_dataset.RasterXSize), dtype=np.float32)
 
         on_band_read = partial(update_max_data, max_data=max_data, no_data_value=no_data_value)
         get_final_output_band_data = lambda : max_data
-        self.aggregate_bands(input_dataset, output_band, on_band_read, get_final_output_band_data, output_dataset)
+        await asyncio.to_thread(self.aggregate_bands, input_dataset, output_band, on_band_read, get_final_output_band_data, output_dataset)
         
         return output_file_path
     
@@ -169,9 +170,9 @@ class DataAggregator:
         
         return band_data
     
-    def aggregate_files_by_average(self, input_datasets_paths: list, output_folder_path: Path) -> Path:
+    async def aggregate_files_by_average(self, input_datasets_paths: list, output_folder_path: Path) -> Path:
         input_datasets = [gdal.Open(str(input_path)) for input_path in input_datasets_paths]
-        output_dataset, output_band, output_file_path = self.create_aggregated_dataset_and_band(input_datasets[0], output_folder_path, input_datasets_paths[0].stem)
+        output_dataset, output_band, output_file_path = await asyncio.to_thread(self.create_aggregated_dataset_and_band, input_datasets[0], output_folder_path, input_datasets_paths[0].stem)
         
         no_data_value = output_band.GetNoDataValue()
         sum_data = np.zeros((output_dataset.RasterYSize, output_dataset.RasterXSize), dtype=np.float32)
@@ -179,7 +180,7 @@ class DataAggregator:
 
         on_band_read = partial(update_sum_count, sum_data=sum_data, count_data=count_data, no_data_value=no_data_value)
         get_final_output_band_data = partial(compute_avg_data, sum_data=sum_data, count_data=count_data, no_data_value=no_data_value)
-        self.aggregate_datasets(input_datasets, output_band, on_band_read, get_final_output_band_data, output_dataset)
+        await asyncio.to_thread(self.aggregate_datasets, input_datasets, output_band, on_band_read, get_final_output_band_data, output_dataset)
         
         return output_file_path
         
@@ -192,15 +193,15 @@ class DataAggregator:
         output_band.WriteArray(get_final_output_band_data())
         output_dataset.FlushCache()
     
-    def aggregate_files_by_max(self, input_datasets_paths: list, output_folder_path: Path) -> Path:
+    async def aggregate_files_by_max(self, input_datasets_paths: list, output_folder_path: Path) -> Path:
         input_datasets = [gdal.Open(str(input_path)) for input_path in input_datasets_paths]
-        output_dataset, output_band, output_file_path = self.create_aggregated_dataset_and_band(input_datasets[0], output_folder_path, input_datasets_paths[0].stem)
+        output_dataset, output_band, output_file_path = await asyncio.to_thread(self.create_aggregated_dataset_and_band, input_datasets[0], output_folder_path, input_datasets_paths[0].stem)
         
         no_data_value = output_band.GetNoDataValue()
         max_data = np.zeros((output_dataset.RasterYSize, output_dataset.RasterXSize), dtype=np.float32)
 
         on_band_read = partial(update_max_data, max_data=max_data, no_data_value=no_data_value)
         get_final_output_band_data = lambda : max_data
-        self.aggregate_datasets(input_datasets, output_band, on_band_read, get_final_output_band_data, output_dataset)
+        await asyncio.to_thread(self.aggregate_datasets, input_datasets, output_band, on_band_read, get_final_output_band_data, output_dataset)
         
         return output_file_path

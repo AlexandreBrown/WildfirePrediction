@@ -20,7 +20,7 @@ projections:
 paths:
   input_folder_path: "data/download/"
   output_folder_path: "data/datasets/"
-no_data_fill_value: -99999
+no_data_fill_value: -99_999
 input_format: "netCDF"
 output_format: "GTiff"
 input_data:

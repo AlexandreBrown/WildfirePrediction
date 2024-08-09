@@ -1,6 +1,5 @@
-import multiprocessing as mp
-import os
 import geopandas as gpd
+import asyncio
 from osgeo import gdal
 from typing import Optional
 from pathlib import Path
@@ -41,11 +40,11 @@ class TilesPreprocessor:
         
         self.output_folder.mkdir(parents=True, exist_ok=True)
     
-    def preprocess_tiles(self, data_type: str) -> list:
+    async def preprocess_tiles(self, data_type: str) -> list:
                 
-        merged_raw_tiles_ds = self.merge_raw_tiles()
-        reprojected_raster_output_file = self.resize_pixels_and_reproject(merged_raw_tiles_ds, data_type)
-        tiles_paths = self.make_tiles(reprojected_raster_output_file)
+        merged_raw_tiles_ds = await asyncio.to_thread(self.merge_raw_tiles)
+        reprojected_raster_output_file = await asyncio.to_thread(self.resize_pixels_and_reproject, merged_raw_tiles_ds, data_type)
+        tiles_paths = await asyncio.to_thread(self.make_tiles, reprojected_raster_output_file)
         
         return tiles_paths
     
@@ -97,7 +96,7 @@ class TilesPreprocessor:
             format=self.output_format,
             srcNodata=no_data_value,
             dstNodata=no_data_value,
-            multithread=True
+            multithread=False
         )
         
         extension = get_extension(self.output_format)
@@ -106,10 +105,10 @@ class TilesPreprocessor:
         
         dest_path = str(reprojected_output_path.resolve())
         
-        with gdal.config_options(
-            {"GDAL_NUM_THREADS": "ALL_CPUS"}
-        ):
-            gdal.Warp(dest_path, input_ds, options=warp_options)
+        # with gdal.config_options(
+        #     {"GDAL_NUM_THREADS": "ALL_CPUS"}
+        # ):
+        gdal.Warp(dest_path, input_ds, options=warp_options)
 
         return reprojected_output_path
 
@@ -129,12 +128,7 @@ class TilesPreprocessor:
         
         args = [(input_dataset_file_path, row, tile_folder, str(index)) for index, row in self.big_tiles_boundaries.iterrows()]
         
-        max_nb_processes = min(max(1, (len(os.sched_getaffinity(0)) - 1) //2), len(args))
-        
-        with mp.Pool(processes=max_nb_processes) as pool:
-            output_files_paths = pool.starmap(self.make_tile, args)
-    
-        return output_files_paths
+        return [self.make_tile(*arg) for arg in args]
 
     def make_tile(self, input_dataset_file_path: Path, row: gpd.GeoSeries, tile_folder: Path, tile_identifier: str) -> Path:
         tile_geometry = row['geometry']

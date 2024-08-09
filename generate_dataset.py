@@ -1,3 +1,4 @@
+import asyncio
 import hydra
 import logging
 from omegaconf import DictConfig
@@ -10,10 +11,11 @@ from pathlib import Path
 from preprocessing.no_data_value_preprocessor import NoDataValuePreprocessor
 
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler())
+if len(logger.handlers) == 0:
+    handler = logging.StreamHandler()
+    logger.addHandler(handler)
 
 
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
@@ -49,12 +51,14 @@ def main(cfg : DictConfig):
         output_format=cfg.output_format
     )
     
-    dataset_generator.generate(
-        dynamic_input_data=dynamic_input_data,
-        static_input_data=static_input_data,
-        periods_config=OmegaConf.to_container(cfg.periods),
-        resolution_config=OmegaConf.to_container(cfg.resolution),
-        projections_config=OmegaConf.to_container(cfg.projections)
+    asyncio.run(
+        dataset_generator.generate(
+            dynamic_input_data=dynamic_input_data,
+            static_input_data=static_input_data,
+            periods_config=OmegaConf.to_container(cfg.periods),
+            resolution_config=OmegaConf.to_container(cfg.resolution),
+            projections_config=OmegaConf.to_container(cfg.projections)
+        )
     )
 
 

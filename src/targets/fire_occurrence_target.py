@@ -1,7 +1,6 @@
 import logging
 import numpy as np
-import multiprocessing as mp
-import os
+import asyncio
 from pathlib import Path
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
@@ -9,10 +8,11 @@ from osgeo import gdal, osr
 from raster_io.read import get_extension
 
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler())
+if len(logger.handlers) == 0:
+    handler = logging.StreamHandler()
+    logger.addHandler(handler)
 
 
 class FireOccurrenceTarget:
@@ -23,7 +23,6 @@ class FireOccurrenceTarget:
         target_pixel_size_in_meters: int,
         target_srid: int = 3978,
         output_folder_path: Path = Path("../data/target/"),
-        max_nb_processes: int = max(1, (len(os.sched_getaffinity(0)) - 1) //2),
         output_format: str = "GTiff"
     ):
         self.fire_data_source = fire_data_source
@@ -32,21 +31,21 @@ class FireOccurrenceTarget:
         self.target_srid = target_srid
         self.output_folder_path = output_folder_path
         self.output_folder_path.mkdir(parents=True, exist_ok=True)
-        self.max_nb_processes = max_nb_processes
         self.output_format = output_format
         gdal.UseExceptions()
     
-    def generate_target_for_years_ranges(self, years_ranges: list) -> dict:
+    async def generate_target_for_years_ranges(self, years_ranges: list) -> dict:
         
         years = set()
         for years_range in years_ranges:
             for year in years_range:
                 years.add(year)
         
-        nb_processes = min(self.max_nb_processes, len(years))
-        logger.info(f"Downloading fire polygons for all years using {nb_processes} processes...")
-        with mp.Pool(processes=nb_processes) as pool:
-            years_fire_polygons_paths = pool.map(self.download_year_fire_polygons, years)
+        logger.info(f"Downloading fire polygons for all {len(years)} years...")
+        
+        tasks = [asyncio.create_task(self.download_year_fire_polygons(year)) for year in years]
+        
+        years_fire_polygons_paths = await asyncio.gather(*tasks)
         
         years_fire_polygons_paths = {
             year: year_fire_polygons_path for year, year_fire_polygons_path in years_fire_polygons_paths
@@ -61,20 +60,20 @@ class FireOccurrenceTarget:
         logger.info(f"Final raster will have dimensions ({output_raster_height_in_pixels} x {output_raster_width_in_pixels}) pixels")
         
         args = [(year, x_min, y_max, output_raster_width_in_pixels, output_raster_height_in_pixels, years_fire_polygons_paths) for year in years]
-        nb_processes = min(self.max_nb_processes, len(args))
-        logger.info(f"Rasterizing fire polgyons for all years using {nb_processes} processes...")
-        with mp.Pool(processes=nb_processes) as pool:
-            rasterized_fire_polygons_paths = pool.starmap(self.rasterize_fire_polygons, args)
+        logger.info(f"Rasterizing fire polgyons for all {len(years)} years...")
+        
+        tasks = [asyncio.create_task(asyncio.to_thread(self.rasterize_fire_polygons, *arg)) for arg in args]
+        rasterized_fire_polygons_paths = await asyncio.gather(*tasks)
         
         rasterized_fire_polygons_paths = {
             year: rasterized_fire_polygons_path for year, rasterized_fire_polygons_path in rasterized_fire_polygons_paths
         }
         
         args = [(years_range, x_min, y_max, output_raster_width_in_pixels, output_raster_height_in_pixels, rasterized_fire_polygons_paths) for years_range in years_ranges]
-        nb_processes = min(self.max_nb_processes, len(args))
-        logger.info(f"Combining rasters for all years ranges using {nb_processes} processes...")
-        with mp.Pool(processes=nb_processes) as pool:
-            years_ranges_combined_rasters = pool.starmap(self.combine_rasters, args)
+        logger.info(f"Combining rasters for all {len(years_ranges)} years ranges...")
+        
+        tasks = [asyncio.create_task(asyncio.to_thread(self.combine_rasters, *arg)) for arg in args]
+        years_ranges_combined_rasters = await asyncio.gather(*tasks)
         
         years_ranges_combined_rasters = {
             years_range: combined_raster_path for years_range, combined_raster_path in years_ranges_combined_rasters
@@ -82,8 +81,9 @@ class FireOccurrenceTarget:
         
         return years_ranges_combined_rasters
     
-    def download_year_fire_polygons(self, year: int) -> tuple:
-        year_fire_polygons = self.fire_data_source.download(year).to_crs(epsg=self.target_srid)
+    async def download_year_fire_polygons(self, year: int) -> tuple:
+        result = await asyncio.to_thread(self.fire_data_source.download, year)
+        year_fire_polygons = result.to_crs(epsg=self.target_srid)
         
         output_path = self.output_folder_path / f"{year}.shp"
         

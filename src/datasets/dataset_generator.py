@@ -2,8 +2,8 @@ import uuid
 import logging
 import shutil
 import geopandas as gpd
-import os
 import json
+import asyncio
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
 from grid.square_meters_grid import SquareMetersGrid
@@ -18,10 +18,8 @@ from raster_io.read import open_dataset
 from raster_io.read import get_extension
 
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler())
 
 
 class DatasetGenerator:
@@ -45,7 +43,7 @@ class DatasetGenerator:
         self.input_format = input_format
         self.output_format = output_format
     
-    def generate(
+    async def generate(
         self,
         dynamic_input_data: list,
         static_input_data: list,
@@ -66,9 +64,9 @@ class DatasetGenerator:
             
             tmp_folder_path = self.get_dataset_tmp_folder_path(dataset_folder_path)
             
-            self.process_input_data(dataset_folder_path, tmp_folder_path, big_tiles_boundaries, dynamic_input_data, static_input_data, periods_config, resolution_config, projections_config, target_years_ranges)
+            await self.process_input_data(dataset_folder_path, tmp_folder_path, big_tiles_boundaries, dynamic_input_data, static_input_data, periods_config, resolution_config, projections_config, target_years_ranges)
             
-            self.generate_targets(dataset_folder_path, tmp_folder_path, target_years_ranges, big_tiles_boundaries, resolution_config, projections_config)
+            await self.generate_targets(dataset_folder_path, tmp_folder_path, target_years_ranges, big_tiles_boundaries, resolution_config, projections_config)
             
             self.cleanup_tmp_folder(tmp_folder_path)
         except BaseException as e:
@@ -110,7 +108,7 @@ class DatasetGenerator:
         
         return target_years_ranges
 
-    def process_input_data(
+    async def process_input_data(
         self, 
         dataset_folder_path: Path, 
         tmp_path: Path,
@@ -128,9 +126,9 @@ class DatasetGenerator:
         
         processed_data_folder_path.mkdir(parents=True, exist_ok=True)
         
-        input_data_yearly_data_index = self.process_dynamic_input_data(processed_data_folder_path, dynamic_input_data, big_tiles_boundaries, periods_config, resolution_config, projections_config)
+        input_data_yearly_data_index = await self.process_dynamic_input_data(processed_data_folder_path, dynamic_input_data, big_tiles_boundaries, periods_config, resolution_config, projections_config)
 
-        input_data_yearly_data_index = self.process_static_data(processed_data_folder_path, input_data_yearly_data_index, big_tiles_boundaries, static_input_data, resolution_config, projections_config)
+        input_data_yearly_data_index = await self.process_static_data(processed_data_folder_path, input_data_yearly_data_index, big_tiles_boundaries, static_input_data, resolution_config, projections_config)
 
         tiles_names = self.get_tiles_names(input_data_yearly_data_index)
 
@@ -138,7 +136,7 @@ class DatasetGenerator:
 
         self.stack_data(input_data_yearly_data_index, tiles_names, dataset_folder_path, periods_config, resolution_config, dynamic_input_data, static_input_data, target_years_ranges)        
     
-    def process_dynamic_input_data(
+    async def process_dynamic_input_data(
         self, 
         processed_data_folder_path: Path, 
         dynamic_input_data: list, 
@@ -150,13 +148,11 @@ class DatasetGenerator:
                         
         args = [ (processed_data_folder_path, input_data_name, input_data_values, input_data_values['layer'], input_data_values['is_affected_by_fires'], big_tiles_boundaries, periods_config, resolution_config, projections_config) for input_data_name, input_data_values in dynamic_input_data]
         
-        nb_threads = min(max(1, (len(os.sched_getaffinity(0)) - 1) // 2), len(args))
+        logger.info(f"Processing {len(dynamic_input_data)} dynamic input data...")
         
-        logger.info(f"Processing {len(dynamic_input_data)} dynamic input data using {nb_threads} threads...")
+        tasks = [asyncio.create_task(self.get_dynamic_input_data_yearly_data(*arg)) for arg in args]
         
-        input_data_yearly_data = []
-        for arg in args:
-            input_data_yearly_data.append(self.get_dynamic_input_data_yearly_data(*arg))
+        input_data_yearly_data = await asyncio.gather(*tasks)
 
         logger.info(f"Processed {len(dynamic_input_data)} dynamic input!")
 
@@ -174,7 +170,7 @@ class DatasetGenerator:
         
         return formatted_input_data_yearly_data_index
 
-    def get_dynamic_input_data_yearly_data(
+    async def get_dynamic_input_data_yearly_data(
         self, 
         processed_data_folder_path: Path, 
         input_data_name: str,
@@ -191,9 +187,10 @@ class DatasetGenerator:
         yearly_data_for_1_input_data = {}
 
         for year in year_range:
-            tiles_months_data, tiles_months_output_paths = self.get_dynamic_input_data_tiles_months_data_for_1_year(processed_data_folder_path / Path(f"{year}"), year, input_data_name, layer_name, input_data_values, big_tiles_boundaries, periods_config, resolution_config, projections_config)
-            self.aggregate_dynamic_input_data_yearly(input_data_name, input_data_values, yearly_data_for_1_input_data, processed_data_folder_path, year, tiles_months_data)
-            self.cleanup_months_data(tiles_months_output_paths)
+            tiles_months_data, tiles_months_output_paths = await self.get_dynamic_input_data_tiles_months_data_for_1_year(processed_data_folder_path / Path(f"{year}"), year, input_data_name, layer_name, input_data_values, big_tiles_boundaries, periods_config, resolution_config, projections_config)
+            year, yearly_data_dict = await self.aggregate_dynamic_input_data_yearly(input_data_name, input_data_values, yearly_data_for_1_input_data, processed_data_folder_path, year, tiles_months_data)
+            yearly_data_for_1_input_data[year] = yearly_data_dict
+            await asyncio.to_thread(self.cleanup_months_data, tiles_months_output_paths)
         
         return yearly_data_for_1_input_data
 
@@ -211,7 +208,7 @@ class DatasetGenerator:
         
         return range(year_start_inclusive, year_end_inclusive+1)
 
-    def get_dynamic_input_data_tiles_months_data_for_1_year(
+    async def get_dynamic_input_data_tiles_months_data_for_1_year(
         self,
         processed_data_year_output_folder_path: Path,
         year: int,
@@ -223,23 +220,18 @@ class DatasetGenerator:
         resolution_config: dict,
         projections_config: dict
     ) -> tuple:
-        
-        logger.info(f"Processing {input_data_name} for year {year}...")
 
         months_range = range(periods_config['month_start_inclusive'], periods_config['month_end_inclusive'] + 1)
         
-        months_tiles = []
-        tiles_months_output_paths = []
-        for month in months_range:
-            tiles_path, tiles_output_path = self.get_dynamic_input_data_tiles_for_1_month(processed_data_year_output_folder_path, year, month, input_data_name, layer_name, input_data_values, big_tiles_boundaries, resolution_config, projections_config)
-            months_tiles.append((tiles_path, tiles_output_path))
-            tiles_months_output_paths.append(tiles_output_path)
+        months_tiles = [await self.get_dynamic_input_data_tiles_for_1_month(processed_data_year_output_folder_path, year, month, input_data_name, layer_name, input_data_values, big_tiles_boundaries, resolution_config, projections_config) for month in months_range]
+        
+        tiles_months_output_paths = [tiles_output_path for _, tiles_output_path in months_tiles]
 
-        tiles_months_data = self.aggregate_dynamic_input_data_monthly(input_data_name, year, months_tiles, input_data_values)
+        tiles_months_data = await self.aggregate_dynamic_input_data_monthly(input_data_name, year, months_tiles, input_data_values)
         
         return tiles_months_data, tiles_months_output_paths
     
-    def get_dynamic_input_data_tiles_for_1_month(self, processed_data_year_output_folder_path: Path, year: int, month: int, input_data_name: str, layer_name: str, input_data_values: dict, big_tiles_boundaries: gpd.GeoDataFrame, resolution_config: dict, projections_config: dict) -> tuple:
+    async def get_dynamic_input_data_tiles_for_1_month(self, processed_data_year_output_folder_path: Path, year: int, month: int, input_data_name: str, layer_name: str, input_data_values: dict, big_tiles_boundaries: gpd.GeoDataFrame, resolution_config: dict, projections_config: dict) -> tuple:
             
         raw_tiles_folder = self.input_folder_path / Path(f"{year}") / Path(f"{month}") / Path(f"{input_data_name}")
         
@@ -260,14 +252,11 @@ class DatasetGenerator:
             resample_algorithm_categorical=resolution_config['resample_algorithm_categorical']
         )
         
-        tiles_path = tiles.preprocess_tiles(data_type=input_data_values['data_type'])
-        
-        logger.info(f"Generated {len(tiles_path)} tiles for {input_data_name} for year {year} and month {month}!")
+        tiles_path = await tiles.preprocess_tiles(data_type=input_data_values['data_type'])
         
         return tiles_path, tiles_output_path
     
-    def aggregate_dynamic_input_data_monthly(self, input_data_name: str, year: int, months_tiles: list, input_data_values: dict) -> dict:        
-        logger.info(f"Aggregating {input_data_name} monthly for year {year}...")
+    async def aggregate_dynamic_input_data_monthly(self, input_data_name: str, year: int, months_tiles: list, input_data_values: dict) -> dict:        
         
         month_data_aggregator = DataAggregator(output_format=self.output_format)
     
@@ -277,12 +266,12 @@ class DatasetGenerator:
             month_aggregated_output_folder_path = tiles_output_path / Path("month_aggregated_data")
             for tile_path in tiles_path:
                 if input_data_values['aggregate_by'] == 'average':
-                    tile_path_monthly_aggregated_data = month_data_aggregator.aggregate_bands_by_average(
+                    tile_path_monthly_aggregated_data = await month_data_aggregator.aggregate_bands_by_average(
                         input_dataset_path=tile_path,
                         output_folder_path=month_aggregated_output_folder_path
                     )
                 elif input_data_values['aggregate_by'] == 'max':
-                    tile_path_monthly_aggregated_data = month_data_aggregator.aggregate_bands_by_max(
+                    tile_path_monthly_aggregated_data = await month_data_aggregator.aggregate_bands_by_max(
                         input_dataset_path=tile_path,
                         output_folder_path=month_aggregated_output_folder_path
                     )
@@ -295,8 +284,7 @@ class DatasetGenerator:
         
         return tiles_months_data
 
-    def aggregate_dynamic_input_data_yearly(self, input_data_name: str, input_data_values: dict, yearly_data: dict, processed_data_folder_path: Path, year: int, tiles_months_data: dict):
-        logger.info(f"Aggregating {input_data_name} yearly for year {year}...")
+    async def aggregate_dynamic_input_data_yearly(self, input_data_name: str, input_data_values: dict, processed_data_folder_path: Path, year: int, tiles_months_data: dict) -> tuple:
         
         year_data_aggregator = DataAggregator(output_format=self.output_format)
 
@@ -306,12 +294,12 @@ class DatasetGenerator:
         
         for tile_name, tile_months_data in tiles_months_data.items():
             if input_data_values['aggregate_by'] == 'average':
-                tile_year_data_path = year_data_aggregator.aggregate_files_by_average(
+                tile_year_data_path = await year_data_aggregator.aggregate_files_by_average(
                     input_datasets_paths=tile_months_data,
                     output_folder_path=year_aggregated_output_folder_path
                 )
             elif input_data_values['aggregate_by'] == 'max':
-                tile_year_data_path = year_data_aggregator.aggregate_files_by_max(
+                tile_year_data_path = await year_data_aggregator.aggregate_files_by_max(
                     input_datasets_paths=tile_months_data,
                     output_folder_path=year_aggregated_output_folder_path
                 )
@@ -320,11 +308,11 @@ class DatasetGenerator:
             
             year_tiles_data_paths.append(tile_year_data_path)
         
-        yearly_data[year] = {
+        return year, {
             input_data_name: year_tiles_data_paths
         }
 
-    def process_static_data(
+    async def process_static_data(
         self, 
         processed_data_folder_path: Path,
         input_data_yearly_data_index: dict, 
@@ -362,7 +350,7 @@ class DatasetGenerator:
             )
             
             logger.info(f"{input_data_name}: Preprocessing tiles...")
-            tiles_paths = tiles.preprocess_tiles(data_type=input_data_values['data_type'])                        
+            tiles_paths = await tiles.preprocess_tiles(data_type=input_data_values['data_type'])                        
             logger.info(f"{input_data_name}: Generated {len(tiles_paths)} tiles!")
 
             for year in input_data_yearly_data_index.keys():
@@ -494,16 +482,12 @@ class DatasetGenerator:
             with open(logs_folder / "sources_yearly_data_index.json", "w") as f:
                 json.dump(serializable_sources_yearly_data_index, f, indent=4)
     
-    def generate_targets(self, dataset_folder_path: Path, tmp_path: Path, target_years_ranges: list, big_tiles_boundaries: gpd.GeoDataFrame, resolution_config: dict, projections_config: dict):
+    async def generate_targets(self, dataset_folder_path: Path, tmp_path: Path, target_years_ranges: list, big_tiles_boundaries: gpd.GeoDataFrame, resolution_config: dict, projections_config: dict):
         logger.info("Generating targets...")
         
         fire_data_source = NbacFireDataSource(Path(self.input_folder_path))
         
         tmp_target_folder_path = tmp_path / Path("targets")
-        
-        max_nb_processes = max(1, (len(os.sched_getaffinity(0)) - 1)//2)
-        
-        logger.info(f"Max nb processes: {max_nb_processes}")
 
         target = FireOccurrenceTarget(
             fire_data_source=fire_data_source,
@@ -511,11 +495,10 @@ class DatasetGenerator:
             target_pixel_size_in_meters=resolution_config['pixel_size_in_meters'],
             target_srid=projections_config['target_srid'],
             output_folder_path=tmp_target_folder_path,
-            max_nb_processes=max_nb_processes,
             output_format=self.output_format
         )
         
-        target_ranges_combined_raster = target.generate_target_for_years_ranges(target_years_ranges)
+        target_ranges_combined_raster = await target.generate_target_for_years_ranges(target_years_ranges)
         
         logger.info("Generating tiles for targets...")
 
@@ -541,7 +524,7 @@ class DatasetGenerator:
             )
 
             logger.info(f"Preprocessing tiles for target years range: {years_range}...")
-            tiles_paths = tiles_preprocessor.preprocess_tiles(data_type="categorical")
+            tiles_paths = await tiles_preprocessor.preprocess_tiles(data_type="categorical")
             logger.info(f"Generated {len(tiles_paths)} tiles for target years range: {years_range}!")
             
             tiles_folder_path = tiles_paths[0].parent

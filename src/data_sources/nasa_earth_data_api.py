@@ -14,8 +14,6 @@ from typing import Optional
 from datetime import datetime
 
 
-logging.basicConfig(level=logging.INFO)
-
 QA_FILE_NAME_CONTENT = '_NUMNC'
 
 class NasaEarthDataApi:
