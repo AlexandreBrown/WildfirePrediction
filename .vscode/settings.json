@@ -1,0 +1,11 @@
+{
+    "flake8.args": [
+        "--max-line-length=180",
+        "--ignore=W293,W503,E731"
+    ],
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true
+    },
+    "mypy.dmypyExecutable": "/home/user/micromamba/envs/wildfire/bin/dmypy"
+}

@@ -16,4 +16,5 @@ dependencies:
   - conda-forge::pre-commit=3.7.1
   - conda-forge::trufflehog=2.2.1
   - conda-forge::aiohttp=3.9.5
+  - conda-forge::mypy=1.11.1
   - pip
