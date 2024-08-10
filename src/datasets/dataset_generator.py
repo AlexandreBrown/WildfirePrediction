@@ -4,6 +4,7 @@ import geopandas as gpd
 import json
 import asyncio
 import sys
+import psutil
 from loguru import logger
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
@@ -23,7 +24,6 @@ logger.remove()
 format_string = (
     "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {name} | {message} | {extra}"
 )
-logger.add(sys.stderr, format=format_string, colorize=True)
 
 
 class DatasetGenerator:
@@ -48,6 +48,12 @@ class DatasetGenerator:
         self.input_format = input_format
         self.output_format = output_format
         self.semaphore = semaphore
+        logger.add(
+            sys.stderr,
+            format=format_string,
+            colorize=True,
+            level="DEBUG" if self.debug else "INFO",
+        )
 
     async def generate(
         self,
@@ -376,6 +382,7 @@ class DatasetGenerator:
     ) -> tuple:
         with logger.contextualize(month=month):
             logger.info("Processing...")
+            logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 
             raw_tiles_folder = (
                 self.input_folder_path
@@ -423,6 +430,7 @@ class DatasetGenerator:
         input_data_values: dict,
     ) -> dict:
         logger.info("Aggregating monthly data...")
+        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 
         month_data_aggregator = DataAggregator(output_format=self.output_format)
 
@@ -455,6 +463,9 @@ class DatasetGenerator:
                 tile_name = tile_path.stem
 
                 tiles_months_data[tile_name].append(tile_path_monthly_aggregated_data)
+
+        logger.info("Monthly data aggregation done!")
+        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 
         return tiles_months_data
 
