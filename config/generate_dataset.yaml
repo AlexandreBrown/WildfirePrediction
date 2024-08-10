@@ -23,6 +23,7 @@ paths:
 no_data_fill_value: -99_999
 input_format: "netCDF"
 output_format: "GTiff"
+max_concurrency: 32
 input_data:
     dynamic:
       era5_reanalysis_100m_u_component_of_wind:

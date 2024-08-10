@@ -1,9 +1,10 @@
 import uuid
-import logging
 import shutil
 import geopandas as gpd
 import json
 import asyncio
+import sys
+from loguru import logger
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
 from grid.square_meters_grid import SquareMetersGrid
@@ -18,8 +19,11 @@ from raster_io.read import open_dataset
 from raster_io.read import get_extension
 
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.remove()
+format_string = (
+    "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {name} | {message} | {extra}"
+)
+logger.add(sys.stderr, format=format_string, colorize=True)
 
 
 class DatasetGenerator:
@@ -33,6 +37,7 @@ class DatasetGenerator:
         no_data_value_preprocessor: NoDataValuePreprocessor,
         input_format: str,
         output_format: str,
+        semaphore: asyncio.Semaphore,
     ):
         self.canada_boundary = canada_boundary
         self.grid = grid
@@ -42,6 +47,7 @@ class DatasetGenerator:
         self.no_data_value_preprocessor = no_data_value_preprocessor
         self.input_format = input_format
         self.output_format = output_format
+        self.semaphore = semaphore
 
     async def generate(
         self,
@@ -211,12 +217,16 @@ class DatasetGenerator:
 
         logger.info(f"Processing {len(dynamic_input_data)} dynamic input data...")
 
-        tasks = [
-            asyncio.create_task(self.get_dynamic_input_data_yearly_data(*arg))
-            for arg in args
-        ]
+        tasks = set()
+        for arg in args:
+            async with self.semaphore:
+                task = asyncio.create_task(
+                    self.get_dynamic_input_data_yearly_data(*arg)
+                )
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
 
-        input_data_yearly_data = await asyncio.gather(*tasks)
+        input_data_yearly_data = await asyncio.gather(*tasks, return_exceptions=True)
 
         logger.info(f"Processed {len(dynamic_input_data)} dynamic input!")
 
@@ -248,35 +258,41 @@ class DatasetGenerator:
         resolution_config: dict,
         projections_config: dict,
     ) -> dict:
-        year_range = self.get_dynamic_input_data_total_years_extent(
-            periods_config, is_affected_by_fires
-        )
+        with logger.contextualize(input_data_name=input_data_name):
 
-        yearly_data_for_1_input_data = {}
+            year_range = self.get_dynamic_input_data_total_years_extent(
+                periods_config, is_affected_by_fires
+            )
 
-        for year in year_range:
-            tiles_months_data, tiles_months_output_paths = (
-                await self.get_dynamic_input_data_tiles_months_data_for_1_year(
-                    processed_data_folder_path / Path(f"{year}"),
-                    year,
-                    input_data_name,
-                    layer_name,
-                    input_data_values,
-                    big_tiles_boundaries,
-                    periods_config,
-                    resolution_config,
-                    projections_config,
-                )
-            )
-            year, yearly_data_dict = await self.aggregate_dynamic_input_data_yearly(
-                input_data_name,
-                input_data_values,
-                processed_data_folder_path,
-                year,
-                tiles_months_data,
-            )
-            yearly_data_for_1_input_data[year] = yearly_data_dict
-            await asyncio.to_thread(self.cleanup_months_data, tiles_months_output_paths)
+            yearly_data_for_1_input_data = {}
+
+            for year in year_range:
+                with logger.contextualize(year=year):
+                    tiles_months_data, tiles_months_output_paths = (
+                        await self.get_dynamic_input_data_tiles_months_data_for_1_year(
+                            processed_data_folder_path / Path(f"{year}"),
+                            year,
+                            input_data_name,
+                            layer_name,
+                            input_data_values,
+                            big_tiles_boundaries,
+                            periods_config,
+                            resolution_config,
+                            projections_config,
+                        )
+                    )
+                    yearly_data_dict = await self.aggregate_dynamic_input_data_yearly(
+                        input_data_name,
+                        input_data_values,
+                        processed_data_folder_path,
+                        year,
+                        tiles_months_data,
+                    )
+                    yearly_data_for_1_input_data[year] = yearly_data_dict
+
+                    await asyncio.to_thread(
+                        self.cleanup_months_data, tiles_months_output_paths
+                    )
 
         return yearly_data_for_1_input_data
 
@@ -320,20 +336,26 @@ class DatasetGenerator:
             periods_config["month_end_inclusive"] + 1,
         )
 
-        months_tiles = [
-            await self.get_dynamic_input_data_tiles_for_1_month(
-                processed_data_year_output_folder_path,
-                year,
-                month,
-                input_data_name,
-                layer_name,
-                input_data_values,
-                big_tiles_boundaries,
-                resolution_config,
-                projections_config,
-            )
-            for month in months_range
-        ]
+        tasks = set()
+        for month in months_range:
+            async with self.semaphore:
+                task = asyncio.create_task(
+                    self.get_dynamic_input_data_tiles_for_1_month(
+                        processed_data_year_output_folder_path,
+                        year,
+                        month,
+                        input_data_name,
+                        layer_name,
+                        input_data_values,
+                        big_tiles_boundaries,
+                        resolution_config,
+                        projections_config,
+                    )
+                )
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
+
+        months_tiles = await asyncio.gather(*tasks, return_exceptions=True)
 
         tiles_months_output_paths = [
             tiles_output_path for _, tiles_output_path in months_tiles
@@ -357,6 +379,7 @@ class DatasetGenerator:
         resolution_config: dict,
         projections_config: dict,
     ) -> tuple:
+        logger.info(f"Processing month {month}...")
 
         raw_tiles_folder = (
             self.input_folder_path
@@ -394,6 +417,8 @@ class DatasetGenerator:
             data_type=input_data_values["data_type"]
         )
 
+        logger.info(f"Generated {len(tiles_path)} tiles for month {month}!")
+
         return tiles_path, tiles_output_path
 
     async def aggregate_dynamic_input_data_monthly(
@@ -401,6 +426,7 @@ class DatasetGenerator:
         months_tiles: list,
         input_data_values: dict,
     ) -> dict:
+        logger.info("Aggregating monthly data...")
 
         month_data_aggregator = DataAggregator(output_format=self.output_format)
 
@@ -443,7 +469,8 @@ class DatasetGenerator:
         processed_data_folder_path: Path,
         year: int,
         tiles_months_data: dict,
-    ) -> tuple:
+    ) -> dict:
+        logger.info("Aggregating yearly data...")
 
         year_data_aggregator = DataAggregator(output_format=self.output_format)
 
@@ -476,7 +503,7 @@ class DatasetGenerator:
 
             year_tiles_data_paths.append(tile_year_data_path)
 
-        return year, {input_data_name: year_tiles_data_paths}
+        return {input_data_name: year_tiles_data_paths}
 
     async def process_static_data(
         self,
@@ -560,22 +587,24 @@ class DatasetGenerator:
     ):
         logger.info("Stacking data...")
 
-        tasks = []
+        tasks = set()
         for target_years_range in target_years_ranges:
-            task = asyncio.create_task(
-                self.stack_tiles_data(
-                    input_data_yearly_data_index,
-                    tiles_names,
-                    dataset_folder_path,
-                    periods_config,
-                    resolution_config,
-                    dynamic_input_data,
-                    static_input_data,
-                    target_years_range,
+            async with self.semaphore:
+                task = asyncio.create_task(
+                    self.stack_tiles_data(
+                        input_data_yearly_data_index,
+                        tiles_names,
+                        dataset_folder_path,
+                        periods_config,
+                        resolution_config,
+                        dynamic_input_data,
+                        static_input_data,
+                        target_years_range,
+                    )
                 )
-            )
-            tasks.append(task)
-        await asyncio.gather(*tasks)
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def stack_tiles_data(
         self,

@@ -164,7 +164,8 @@ So each big tile represents the data inputs stacked for 1 year for the area deli
 
 # Contributing  
 1. Follow the [prerequisites](#prerequisites) steps.
-2. Install pre-commit hooks  
+1. [Download & Install Trufflehog Binary](https://github.com/trufflesecurity/trufflehog/releases/tag/v3.81.8)
+1. Install pre-commit hooks  
 ```bash
 pre-commit install --allow-missing-config
 ```  

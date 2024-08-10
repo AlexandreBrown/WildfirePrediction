@@ -1,6 +1,6 @@
 import asyncio
 import hydra
-import logging
+from loguru import logger
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
 from boundaries.canada_boundary import CanadaBoundary
@@ -9,13 +9,6 @@ from grid.square_meters_grid import SquareMetersGrid
 from datasets.dataset_generator import DatasetGenerator
 from pathlib import Path
 from preprocessing.no_data_value_preprocessor import NoDataValuePreprocessor
-
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-if len(logger.handlers) == 0:
-    handler = logging.StreamHandler()
-    logger.addHandler(handler)
 
 
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
@@ -53,6 +46,10 @@ def main(cfg: DictConfig):
 
     no_data_value_preprocessor = NoDataValuePreprocessor(no_data_fill_value)
 
+    logger.info(f"Max concurrency : {cfg.max_concurrency}")
+
+    semaphore = asyncio.Semaphore(cfg.max_concurrency)
+
     dataset_generator = DatasetGenerator(
         canada_boundary,
         grid,
@@ -62,6 +59,7 @@ def main(cfg: DictConfig):
         no_data_value_preprocessor=no_data_value_preprocessor,
         input_format=cfg.input_format,
         output_format=cfg.output_format,
+        semaphore=semaphore,
     )
 
     asyncio.run(

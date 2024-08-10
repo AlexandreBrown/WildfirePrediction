@@ -43,9 +43,11 @@ class TilesPreprocessor:
     async def preprocess_tiles(self, data_type: str) -> list:
 
         merged_raw_tiles_ds = await asyncio.to_thread(self.merge_raw_tiles)
+
         reprojected_raster_output_file = await asyncio.to_thread(
             self.resize_pixels_and_reproject, merged_raw_tiles_ds, data_type
         )
+
         tiles_paths = await asyncio.to_thread(
             self.make_tiles, reprojected_raster_output_file
         )

@@ -34,6 +34,7 @@ class DataAggregator:
         self, input_dataset_path: Path, output_folder_path: Path
     ) -> Path:
         input_dataset = gdal.Open(str(input_dataset_path))
+
         output_dataset, output_band, output_file_path = await asyncio.to_thread(
             self.create_aggregated_dataset_and_band,
             input_dataset,
@@ -76,6 +77,7 @@ class DataAggregator:
         self, input_dataset_path: Path, output_folder_path: Path
     ) -> Path:
         input_dataset = gdal.Open(str(input_dataset_path))
+
         output_dataset, output_band, output_file_path = await asyncio.to_thread(
             self.create_aggregated_dataset_and_band,
             input_dataset,
@@ -92,6 +94,7 @@ class DataAggregator:
             update_max_data, max_data=max_data, no_data_value=no_data_value
         )
         get_final_output_band_data = lambda: max_data
+
         await asyncio.to_thread(
             self.aggregate_bands,
             input_dataset,
