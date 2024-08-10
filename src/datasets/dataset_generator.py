@@ -336,26 +336,21 @@ class DatasetGenerator:
             periods_config["month_end_inclusive"] + 1,
         )
 
-        tasks = set()
-        for month in months_range:
-            async with self.semaphore:
-                task = asyncio.create_task(
-                    self.get_dynamic_input_data_tiles_for_1_month(
-                        processed_data_year_output_folder_path,
-                        year,
-                        month,
-                        input_data_name,
-                        layer_name,
-                        input_data_values,
-                        big_tiles_boundaries,
-                        resolution_config,
-                        projections_config,
-                    )
-                )
-                tasks.add(task)
-                task.add_done_callback(tasks.discard)
+        months_tiles = []
 
-        months_tiles = await asyncio.gather(*tasks, return_exceptions=True)
+        for month in months_range:
+            month_tiles = await self.get_dynamic_input_data_tiles_for_1_month(
+                processed_data_year_output_folder_path,
+                year,
+                month,
+                input_data_name,
+                layer_name,
+                input_data_values,
+                big_tiles_boundaries,
+                resolution_config,
+                projections_config,
+            )
+            months_tiles.append(month_tiles)
 
         tiles_months_output_paths = [
             tiles_output_path for _, tiles_output_path in months_tiles
@@ -379,45 +374,46 @@ class DatasetGenerator:
         resolution_config: dict,
         projections_config: dict,
     ) -> tuple:
-        logger.info(f"Processing month {month}...")
+        with logger.contextualize(month=month):
+            logger.info("Processing...")
 
-        raw_tiles_folder = (
-            self.input_folder_path
-            / Path(f"{year}")
-            / Path(f"{month}")
-            / Path(f"{input_data_name}")
-        )
+            raw_tiles_folder = (
+                self.input_folder_path
+                / Path(f"{year}")
+                / Path(f"{month}")
+                / Path(f"{input_data_name}")
+            )
 
-        tiles_output_path = (
-            processed_data_year_output_folder_path
-            / Path(f"{month}")
-            / Path(f"{input_data_name}")
-        )
+            tiles_output_path = (
+                processed_data_year_output_folder_path
+                / Path(f"{month}")
+                / Path(f"{input_data_name}")
+            )
 
-        tiles = TilesPreprocessor(
-            raw_tiles_folder=raw_tiles_folder,
-            tile_size_in_pixels=resolution_config["tile_size_in_pixels"],
-            pixel_size_in_meters=resolution_config["pixel_size_in_meters"],
-            output_folder=tiles_output_path,
-            big_tiles_boundaries=big_tiles_boundaries,
-            input_format=self.input_format,
-            output_format=self.output_format,
-            layer_name=layer_name,
-            source_srid=projections_config["source_srid"],
-            target_srid=projections_config["target_srid"],
-            resample_algorithm_continuous=resolution_config[
-                "resample_algorithm_continuous"
-            ],
-            resample_algorithm_categorical=resolution_config[
-                "resample_algorithm_categorical"
-            ],
-        )
+            tiles = TilesPreprocessor(
+                raw_tiles_folder=raw_tiles_folder,
+                tile_size_in_pixels=resolution_config["tile_size_in_pixels"],
+                pixel_size_in_meters=resolution_config["pixel_size_in_meters"],
+                output_folder=tiles_output_path,
+                big_tiles_boundaries=big_tiles_boundaries,
+                input_format=self.input_format,
+                output_format=self.output_format,
+                layer_name=layer_name,
+                source_srid=projections_config["source_srid"],
+                target_srid=projections_config["target_srid"],
+                resample_algorithm_continuous=resolution_config[
+                    "resample_algorithm_continuous"
+                ],
+                resample_algorithm_categorical=resolution_config[
+                    "resample_algorithm_categorical"
+                ],
+            )
 
-        tiles_path = await tiles.preprocess_tiles(
-            data_type=input_data_values["data_type"]
-        )
+            tiles_path = await tiles.preprocess_tiles(
+                data_type=input_data_values["data_type"]
+            )
 
-        logger.info(f"Generated {len(tiles_path)} tiles for month {month}!")
+            logger.info(f"Generated {len(tiles_path)} tiles!")
 
         return tiles_path, tiles_output_path
 
