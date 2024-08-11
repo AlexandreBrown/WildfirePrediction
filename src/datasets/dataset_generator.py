@@ -3,7 +3,6 @@ import shutil
 import geopandas as gpd
 import json
 import asyncio
-import sys
 import psutil
 from loguru import logger
 from boundaries.canada_boundary import CanadaBoundary
@@ -18,12 +17,6 @@ from osgeo import gdal
 from targets.fire_occurrence_target import FireOccurrenceTarget
 from raster_io.read import open_dataset
 from raster_io.read import get_extension
-
-
-logger.remove()
-format_string = (
-    "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {name} | {message} | {extra}"
-)
 
 
 class DatasetGenerator:
@@ -51,14 +44,9 @@ class DatasetGenerator:
         self.semaphore = asyncio.Semaphore(max_io_concurrency)
         self.max_io_concurrency = max_io_concurrency
         self.max_cpu_concurrency = max_cpu_concurrency
-        logger.add(
-            sys.stderr,
-            format=format_string,
-            colorize=True,
-            level="DEBUG" if self.debug else "INFO",
-        )
         gdal.UseExceptions()
-        gdal.SetCacheMax(0)
+        cache_max_in_bytes = 128_000_000
+        gdal.SetCacheMax(cache_max_in_bytes)
 
     async def generate(
         self,

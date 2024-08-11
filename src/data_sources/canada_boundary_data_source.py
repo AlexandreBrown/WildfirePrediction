@@ -3,6 +3,8 @@ import zipfile
 import io
 from pathlib import Path
 import geopandas as gpd
+from loguru import logger
+
 
 class CanadaBoundaryDataSource:
     def __init__(self, output_path : Path = Path("../data/canada_boundary/")):
@@ -11,7 +13,7 @@ class CanadaBoundaryDataSource:
     
     def download(self) -> gpd.GeoDataFrame:
         if len(list(self.output_path.glob("./*.shp"))) == 0:
-            print("Downloading canada boundary shapefile...")
+            logger.info("Downloading canada boundary shapefile...")
             download_request = requests.get("https://www12.statcan.gc.ca/census-recensement/2011/geo/bound-limit/files-fichiers/2016/lpr_000b16a_e.zip")
             zip = zipfile.ZipFile(io.BytesIO(download_request.content))
             zip.extractall(self.output_path)

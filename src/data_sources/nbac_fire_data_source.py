@@ -3,6 +3,7 @@ import zipfile
 import io
 from pathlib import Path
 import geopandas as gpd
+from loguru import logger
 
 
 class NbacFireDataSource:
@@ -16,7 +17,7 @@ class NbacFireDataSource:
         output_path.mkdir(parents=True, exist_ok=True)
         
         if len(list(output_path.glob("./*.shp"))) == 0:
-            print(f"Downloading NBAC fire polygons data for year {year}...")
+            logger.info(f"Downloading NBAC fire polygons data for year {year}...")
             download_request = requests.get(f"https://cwfis.cfs.nrcan.gc.ca/downloads/nbac/nbac_{year}_20240530.zip")
             zip = zipfile.ZipFile(io.BytesIO(download_request.content))
             zip.extractall(output_path)

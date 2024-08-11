@@ -1,6 +1,6 @@
 import numpy as np
 import asyncio
-import sys
+import psutil
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from loguru import logger
@@ -8,10 +8,6 @@ from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
 from osgeo import gdal, osr
 from raster_io.read import get_extension
-
-logger.remove()
-format_string = "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {name} | {message}"
-logger.add(sys.stderr, format=format_string, colorize=True)
 
 
 class FireOccurrenceTarget:
@@ -37,7 +33,8 @@ class FireOccurrenceTarget:
         self.max_cpu_concurrency = max_cpu_concurrency
 
         gdal.UseExceptions()
-        gdal.SetCacheMax(0)
+        cache_max_in_bytes = 128_000_000
+        gdal.SetCacheMax(cache_max_in_bytes)
 
     async def generate_target_for_years_ranges(self, years_ranges: list) -> dict:
         years = set()
@@ -46,6 +43,7 @@ class FireOccurrenceTarget:
                 years.add(year)
 
         logger.info(f"Downloading fire polygons for all {len(years)} years...")
+        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
         
         io_semaphore = asyncio.Semaphore(self.max_io_concurrency)
         
@@ -64,6 +62,8 @@ class FireOccurrenceTarget:
         }
 
         logger.info("Computing output bounds based on boundary...")
+        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
+        
         x_min, y_min, x_max, y_max = self.boundary.boundary.total_bounds
 
         output_raster_width_in_pixels = int(
@@ -89,6 +89,7 @@ class FireOccurrenceTarget:
             for year in years
         ]
         logger.info(f"Rasterizing fire polgyons for all {len(years)} years...")
+        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 
         loop = asyncio.get_event_loop()
         with ProcessPoolExecutor(max_workers=self.max_cpu_concurrency) as executor:
@@ -115,6 +116,7 @@ class FireOccurrenceTarget:
             for years_range in years_ranges
         ]
         logger.info(f"Combining rasters for all {len(years_ranges)} years ranges...")
+        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 
         with ProcessPoolExecutor(max_workers=self.max_cpu_concurrency) as executor:
             combine_tasks = [
@@ -127,6 +129,9 @@ class FireOccurrenceTarget:
             years_range: combined_raster_path
             for years_range, combined_raster_path in years_ranges_combined_rasters
         }
+        
+        logger.info("Target generation done!")
+        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 
         return years_ranges_combined_rasters
 

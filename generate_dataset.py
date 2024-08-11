@@ -1,5 +1,6 @@
 import asyncio
 import hydra
+import sys
 from loguru import logger
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
@@ -13,6 +14,16 @@ from preprocessing.no_data_value_preprocessor import NoDataValuePreprocessor
 
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
 def main(cfg: DictConfig):
+    logger.remove()
+    format_string = (
+        "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {name} | {message} | {extra}"
+    )
+    logger.add(
+        sys.stdout,
+        format=format_string,
+        colorize=True,
+        level="DEBUG" if cfg.debug else "INFO",
+    )
 
     logger.info(f"Debug : {cfg.debug}")
 

@@ -31,7 +31,8 @@ class DataAggregator:
         self.output_format = output_format
 
         gdal.UseExceptions()
-        gdal.SetCacheMax(0)
+        cache_max_in_bytes = 128_000_000
+        gdal.SetCacheMax(cache_max_in_bytes)
 
     async def aggregate_bands_by_average(
         self, input_dataset_path: Path, output_folder_path: Path
