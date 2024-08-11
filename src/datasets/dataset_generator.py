@@ -612,25 +612,17 @@ class DatasetGenerator:
     ):
         logger.info("Stacking data...")
 
-        semaphore = asyncio.Semaphore(self.max_io_concurrency)
-        tasks = set()
         for target_years_range in target_years_ranges:
-            async with semaphore:
-                task = asyncio.create_task(
-                    self.stack_tiles_data(
-                        input_data_yearly_data_index,
-                        tiles_names,
-                        dataset_folder_path,
-                        periods_config,
-                        resolution_config,
-                        dynamic_input_data,
-                        static_input_data,
-                        target_years_range,
-                    )
-                )
-                tasks.add(task)
-                task.add_done_callback(tasks.discard)
-        await asyncio.gather(*tasks, return_exceptions=True)
+            await self.stack_tiles_data(
+                input_data_yearly_data_index,
+                tiles_names,
+                dataset_folder_path,
+                periods_config,
+                resolution_config,
+                dynamic_input_data,
+                static_input_data,
+                target_years_range,
+            )
 
     async def stack_tiles_data(
         self,
@@ -647,6 +639,8 @@ class DatasetGenerator:
             f"Stacking data for target years range: [{target_years_range[0]}, {target_years_range[-1]}]..."
         )
 
+        semaphore = asyncio.Semaphore(self.max_io_concurrency)
+
         stacked_input_data_folder_path = (
             dataset_folder_path
             / Path("input_data")
@@ -659,18 +653,26 @@ class DatasetGenerator:
             f"Stacked input data folder path: {str(stacked_input_data_folder_path)}"
         )
 
+        tasks = set()
         for tile_name in tiles_names:
-            await asyncio.to_thread(
-                self.stack_tile_data,
-                dynamic_input_data,
-                static_input_data,
-                input_data_yearly_data_index,
-                tile_name,
-                periods_config,
-                resolution_config,
-                target_years_range,
-                stacked_input_data_folder_path,
-            )
+            async with semaphore:
+                task = asyncio.create_task(
+                    asyncio.to_thread(
+                        self.stack_tile_data,
+                        dynamic_input_data,
+                        static_input_data,
+                        input_data_yearly_data_index,
+                        tile_name,
+                        periods_config,
+                        resolution_config,
+                        target_years_range,
+                        stacked_input_data_folder_path,
+                    )
+                )
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
+
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def stack_tile_data(
         self,
