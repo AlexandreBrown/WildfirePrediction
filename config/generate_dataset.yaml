@@ -1,4 +1,4 @@
-debug: true
+debug: false
 periods:
   target_year_start_inclusive: 2001
   target_year_end_inclusive: 2001
