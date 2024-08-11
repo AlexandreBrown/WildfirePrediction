@@ -1,6 +1,7 @@
 import numpy as np
 import asyncio
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from loguru import logger
 from boundaries.canada_boundary import CanadaBoundary
@@ -22,7 +23,8 @@ class FireOccurrenceTarget:
         target_srid: int = 3978,
         output_folder_path: Path = Path("../data/target/"),
         output_format: str = "GTiff",
-        semaphore: asyncio.Semaphore = asyncio.Semaphore(8),
+        max_io_concurrency: int = 16,
+        max_cpu_concurrency: int = 8,
     ):
         self.fire_data_source = fire_data_source
         self.boundary = boundary
@@ -31,23 +33,25 @@ class FireOccurrenceTarget:
         self.output_folder_path = output_folder_path
         self.output_folder_path.mkdir(parents=True, exist_ok=True)
         self.output_format = output_format
-        self.semaphore = semaphore
+        self.max_io_concurrency = max_io_concurrency
+        self.max_cpu_concurrency = max_cpu_concurrency
 
         gdal.UseExceptions()
         gdal.SetCacheMax(0)
 
     async def generate_target_for_years_ranges(self, years_ranges: list) -> dict:
-
         years = set()
         for years_range in years_ranges:
             for year in years_range:
                 years.add(year)
 
         logger.info(f"Downloading fire polygons for all {len(years)} years...")
-
+        
+        io_semaphore = asyncio.Semaphore(self.max_io_concurrency)
+        
         tasks = set()
         for year in years:
-            async with self.semaphore:
+            async with io_semaphore:
                 task = asyncio.create_task(self.download_year_fire_polygons(year))
                 tasks.add(task)
                 task.add_done_callback(tasks.discard)
@@ -86,18 +90,13 @@ class FireOccurrenceTarget:
         ]
         logger.info(f"Rasterizing fire polgyons for all {len(years)} years...")
 
-        tasks = set()
-        for arg in args:
-            async with self.semaphore:
-                task = asyncio.create_task(
-                    asyncio.to_thread(self.rasterize_fire_polygons, *arg)
-                )
-                tasks.add(task)
-                task.add_done_callback(tasks.discard)
-
-        rasterized_fire_polygons_paths = await asyncio.gather(
-            *tasks, return_exceptions=True
-        )
+        loop = asyncio.get_event_loop()
+        with ProcessPoolExecutor(max_workers=self.max_cpu_concurrency) as executor:
+            rasterize_tasks = [
+                loop.run_in_executor(executor, self.rasterize_fire_polygons, *arg)
+                for arg in args
+            ]
+            rasterized_fire_polygons_paths = await asyncio.gather(*rasterize_tasks, return_exceptions=True)
 
         rasterized_fire_polygons_paths = {
             year: rasterized_fire_polygons_path
@@ -117,18 +116,12 @@ class FireOccurrenceTarget:
         ]
         logger.info(f"Combining rasters for all {len(years_ranges)} years ranges...")
 
-        tasks = set()
-        for arg in args:
-            async with self.semaphore:
-                task = asyncio.create_task(
-                    asyncio.to_thread(self.combine_rasters, *arg)
-                )
-                tasks.add(task)
-                task.add_done_callback(tasks.discard)
-
-        years_ranges_combined_rasters = await asyncio.gather(
-            *tasks, return_exceptions=True
-        )
+        with ProcessPoolExecutor(max_workers=self.max_cpu_concurrency) as executor:
+            combine_tasks = [
+                loop.run_in_executor(executor, self.combine_rasters, *arg)
+                for arg in args
+            ]
+            years_ranges_combined_rasters = await asyncio.gather(*combine_tasks, return_exceptions=True)
 
         years_ranges_combined_rasters = {
             years_range: combined_raster_path

@@ -46,9 +46,8 @@ def main(cfg: DictConfig):
 
     no_data_value_preprocessor = NoDataValuePreprocessor(no_data_fill_value)
 
-    logger.info(f"Max concurrency : {cfg.max_concurrency}")
-
-    semaphore = asyncio.Semaphore(cfg.max_concurrency)
+    logger.info(f"Max IO Concurrency : {cfg.max_io_concurrency}")
+    logger.info(f"Max CPU Concurrency : {cfg.max_cpu_concurrency}")
 
     dataset_generator = DatasetGenerator(
         canada_boundary,
@@ -59,7 +58,8 @@ def main(cfg: DictConfig):
         no_data_value_preprocessor=no_data_value_preprocessor,
         input_format=cfg.input_format,
         output_format=cfg.output_format,
-        semaphore=semaphore,
+        max_io_concurrency=cfg.max_io_concurrency,
+        max_cpu_concurrency=cfg.max_cpu_concurrency,
     )
 
     asyncio.run(

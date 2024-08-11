@@ -37,7 +37,8 @@ class DatasetGenerator:
         no_data_value_preprocessor: NoDataValuePreprocessor,
         input_format: str,
         output_format: str,
-        semaphore: asyncio.Semaphore,
+        max_io_concurrency: int,
+        max_cpu_concurrency: int,
     ):
         self.canada_boundary = canada_boundary
         self.grid = grid
@@ -47,7 +48,9 @@ class DatasetGenerator:
         self.no_data_value_preprocessor = no_data_value_preprocessor
         self.input_format = input_format
         self.output_format = output_format
-        self.semaphore = semaphore
+        self.semaphore = asyncio.Semaphore(max_io_concurrency)
+        self.max_io_concurrency = max_io_concurrency
+        self.max_cpu_concurrency = max_cpu_concurrency
         logger.add(
             sys.stderr,
             format=format_string,
@@ -847,6 +850,8 @@ class DatasetGenerator:
             target_srid=projections_config["target_srid"],
             output_folder_path=tmp_target_folder_path,
             output_format=self.output_format,
+            max_io_concurrency=self.max_io_concurrency,
+            max_cpu_concurrency=self.max_cpu_concurrency,
         )
 
         target_ranges_combined_raster = await target.generate_target_for_years_ranges(
