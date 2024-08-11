@@ -33,8 +33,6 @@ class FireOccurrenceTarget:
         self.max_cpu_concurrency = max_cpu_concurrency
 
         gdal.UseExceptions()
-        cache_max_in_bytes = 128_000_000
-        gdal.SetCacheMax(cache_max_in_bytes)
 
     async def generate_target_for_years_ranges(self, years_ranges: list) -> dict:
         years = set()
@@ -44,9 +42,9 @@ class FireOccurrenceTarget:
 
         logger.info(f"Downloading fire polygons for all {len(years)} years...")
         logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
-        
+
         io_semaphore = asyncio.Semaphore(self.max_io_concurrency)
-        
+
         tasks = set()
         for year in years:
             async with io_semaphore:
@@ -63,7 +61,7 @@ class FireOccurrenceTarget:
 
         logger.info("Computing output bounds based on boundary...")
         logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
-        
+
         x_min, y_min, x_max, y_max = self.boundary.boundary.total_bounds
 
         output_raster_width_in_pixels = int(
@@ -97,7 +95,9 @@ class FireOccurrenceTarget:
                 loop.run_in_executor(executor, self.rasterize_fire_polygons, *arg)
                 for arg in args
             ]
-            rasterized_fire_polygons_paths = await asyncio.gather(*rasterize_tasks, return_exceptions=True)
+            rasterized_fire_polygons_paths = await asyncio.gather(
+                *rasterize_tasks, return_exceptions=True
+            )
 
         rasterized_fire_polygons_paths = {
             year: rasterized_fire_polygons_path
@@ -123,13 +123,15 @@ class FireOccurrenceTarget:
                 loop.run_in_executor(executor, self.combine_rasters, *arg)
                 for arg in args
             ]
-            years_ranges_combined_rasters = await asyncio.gather(*combine_tasks, return_exceptions=True)
+            years_ranges_combined_rasters = await asyncio.gather(
+                *combine_tasks, return_exceptions=True
+            )
 
         years_ranges_combined_rasters = {
             years_range: combined_raster_path
             for years_range, combined_raster_path in years_ranges_combined_rasters
         }
-        
+
         logger.info("Target generation done!")
         logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 

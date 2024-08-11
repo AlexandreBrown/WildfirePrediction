@@ -10,19 +10,20 @@ from grid.square_meters_grid import SquareMetersGrid
 from datasets.dataset_generator import DatasetGenerator
 from pathlib import Path
 from preprocessing.no_data_value_preprocessor import NoDataValuePreprocessor
+from osgeo import gdal
+from logs_formatting.formats import default_project_format
 
 
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
 def main(cfg: DictConfig):
     logger.remove()
-    format_string = (
-        "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {name} | {message} | {extra}"
-    )
+
     logger.add(
         sys.stdout,
-        format=format_string,
+        format=default_project_format,
         colorize=True,
         level="DEBUG" if cfg.debug else "INFO",
+        enqueue=True,
     )
 
     logger.info(f"Debug : {cfg.debug}")
@@ -73,15 +74,18 @@ def main(cfg: DictConfig):
         max_cpu_concurrency=cfg.max_cpu_concurrency,
     )
 
-    asyncio.run(
-        dataset_generator.generate(
-            dynamic_input_data=dynamic_input_data,
-            static_input_data=static_input_data,
-            periods_config=OmegaConf.to_container(cfg.periods),
-            resolution_config=OmegaConf.to_container(cfg.resolution),
-            projections_config=OmegaConf.to_container(cfg.projections),
+    gdal_cache_max_in_bytes = 128_000_000
+
+    with gdal.config_options({"GDAL_CACHEMAX": str(gdal_cache_max_in_bytes)}):
+        asyncio.run(
+            dataset_generator.generate(
+                dynamic_input_data=dynamic_input_data,
+                static_input_data=static_input_data,
+                periods_config=OmegaConf.to_container(cfg.periods),
+                resolution_config=OmegaConf.to_container(cfg.resolution),
+                projections_config=OmegaConf.to_container(cfg.projections),
+            )
         )
-    )
 
 
 if __name__ == "__main__":

@@ -39,8 +39,6 @@ class TilesPreprocessor:
         self.big_tiles_boundaries = big_tiles_boundaries
 
         gdal.UseExceptions()
-        cache_max_in_bytes = 128_000_000
-        gdal.SetCacheMax(cache_max_in_bytes)
 
         self.output_folder.mkdir(parents=True, exist_ok=True)
 

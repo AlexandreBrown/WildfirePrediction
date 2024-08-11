@@ -4,6 +4,7 @@ import geopandas as gpd
 import json
 import asyncio
 import psutil
+import multiprocessing as mp
 from loguru import logger
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
@@ -41,12 +42,9 @@ class DatasetGenerator:
         self.no_data_value_preprocessor = no_data_value_preprocessor
         self.input_format = input_format
         self.output_format = output_format
-        self.semaphore = asyncio.Semaphore(max_io_concurrency)
         self.max_io_concurrency = max_io_concurrency
         self.max_cpu_concurrency = max_cpu_concurrency
         gdal.UseExceptions()
-        cache_max_in_bytes = 128_000_000
-        gdal.SetCacheMax(cache_max_in_bytes)
 
     async def generate(
         self,
@@ -216,16 +214,10 @@ class DatasetGenerator:
 
         logger.info(f"Processing {len(dynamic_input_data)} dynamic input data...")
 
-        tasks = set()
-        for arg in args:
-            async with self.semaphore:
-                task = asyncio.create_task(
-                    self.get_dynamic_input_data_yearly_data(*arg)
-                )
-                tasks.add(task)
-                task.add_done_callback(tasks.discard)
-
-        input_data_yearly_data = await asyncio.gather(*tasks, return_exceptions=True)
+        with mp.Pool(processes=self.max_cpu_concurrency) as pool:
+            input_data_yearly_data = pool.starmap(
+                self.get_dynamic_input_data_yearly_data_wrapper, args
+            )
 
         logger.info(f"Processed {len(dynamic_input_data)} dynamic input!")
 
@@ -244,6 +236,9 @@ class DatasetGenerator:
                 ] = current_input_data_yearly_data_paths
 
         return formatted_input_data_yearly_data_index
+
+    def get_dynamic_input_data_yearly_data_wrapper(self, *arg):
+        return asyncio.run(self.get_dynamic_input_data_yearly_data(*arg))
 
     async def get_dynamic_input_data_yearly_data(
         self,
@@ -266,34 +261,59 @@ class DatasetGenerator:
             yearly_data_for_1_input_data = {}
 
             for year in year_range:
-                with logger.contextualize(year=year):
-                    tiles_months_data, tiles_months_output_paths = (
-                        await self.get_dynamic_input_data_tiles_months_data_for_1_year(
-                            processed_data_folder_path / Path(f"{year}"),
-                            year,
-                            input_data_name,
-                            layer_name,
-                            input_data_values,
-                            big_tiles_boundaries,
-                            periods_config,
-                            resolution_config,
-                            projections_config,
-                        )
-                    )
-                    yearly_data_dict = await self.aggregate_dynamic_input_data_yearly(
-                        input_data_name,
-                        input_data_values,
-                        processed_data_folder_path,
-                        year,
-                        tiles_months_data,
-                    )
-                    yearly_data_for_1_input_data[year] = yearly_data_dict
-
-                    await asyncio.to_thread(
-                        self.cleanup_months_data, tiles_months_output_paths
-                    )
+                year, year_data_dict = await self.get_dynamic_input_data_year_data(
+                    processed_data_folder_path,
+                    year,
+                    input_data_name,
+                    layer_name,
+                    input_data_values,
+                    big_tiles_boundaries,
+                    periods_config,
+                    resolution_config,
+                    projections_config,
+                )
+                yearly_data_for_1_input_data[year] = year_data_dict
 
         return yearly_data_for_1_input_data
+
+    async def get_dynamic_input_data_year_data(
+        self,
+        processed_data_folder_path: Path,
+        year: int,
+        input_data_name: str,
+        layer_name: str,
+        input_data_values: dict,
+        big_tiles_boundaries: gpd.GeoDataFrame,
+        periods_config: dict,
+        resolution_config: dict,
+        projections_config: dict,
+    ) -> tuple:
+        with logger.contextualize(year=year):
+            tiles_months_data, tiles_months_output_paths = (
+                await self.get_dynamic_input_data_tiles_months_data_for_1_year(
+                    processed_data_folder_path / Path(f"{year}"),
+                    year,
+                    input_data_name,
+                    layer_name,
+                    input_data_values,
+                    big_tiles_boundaries,
+                    periods_config,
+                    resolution_config,
+                    projections_config,
+                )
+            )
+
+            year_data_dict = await self.aggregate_dynamic_input_data_yearly(
+                input_data_name,
+                input_data_values,
+                processed_data_folder_path,
+                year,
+                tiles_months_data,
+            )
+
+            await asyncio.to_thread(self.cleanup_months_data, tiles_months_output_paths)
+
+        return (year, year_data_dict)
 
     def cleanup_months_data(self, months_data_paths: dict):
         for month_data_path in months_data_paths:
@@ -592,9 +612,10 @@ class DatasetGenerator:
     ):
         logger.info("Stacking data...")
 
+        semaphore = asyncio.Semaphore(self.max_io_concurrency)
         tasks = set()
         for target_years_range in target_years_ranges:
-            async with self.semaphore:
+            async with semaphore:
                 task = asyncio.create_task(
                     self.stack_tiles_data(
                         input_data_yearly_data_index,
