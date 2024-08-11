@@ -1,10 +1,12 @@
 import geopandas as gpd
 import asyncio
+import psutil
 from osgeo import gdal
 from typing import Optional
 from pathlib import Path
 from raster_io.read import get_extension
 from raster_io.read import get_formatted_file_path
+from loguru import logger
 
 
 class TilesPreprocessor:
@@ -37,19 +39,38 @@ class TilesPreprocessor:
         self.big_tiles_boundaries = big_tiles_boundaries
 
         gdal.UseExceptions()
+        gdal.SetCacheMax(0)
 
         self.output_folder.mkdir(parents=True, exist_ok=True)
 
     async def preprocess_tiles(self, data_type: str) -> list:
 
+        logger.debug(
+            f"RAM Usage preprocess_tiles : {psutil.virtual_memory().percent}/100"
+        )
+
         merged_raw_tiles_ds = await asyncio.to_thread(self.merge_raw_tiles)
+
+        logger.debug(
+            f"RAM Usage after merge_raw_tiles: {psutil.virtual_memory().percent}/100"
+        )
 
         reprojected_raster_output_file = await asyncio.to_thread(
             self.resize_pixels_and_reproject, merged_raw_tiles_ds, data_type
         )
 
+        del merged_raw_tiles_ds
+
+        logger.debug(
+            f"RAM Usage after resize_pixels_and_reproject: {psutil.virtual_memory().percent}/100"
+        )
+
         tiles_paths = await asyncio.to_thread(
             self.make_tiles, reprojected_raster_output_file
+        )
+
+        logger.debug(
+            f"RAM Usage after make_tiles: {psutil.virtual_memory().percent}/100"
         )
 
         return tiles_paths
@@ -71,6 +92,8 @@ class TilesPreprocessor:
         )
 
         raw_tiles_merged_output_path = self.output_folder / "raw_tiles_merged.vrt"
+
+        del raw_tile_ds
 
         return gdal.BuildVRT(
             destName=str(raw_tiles_merged_output_path.resolve()),
@@ -125,10 +148,9 @@ class TilesPreprocessor:
 
         dest_path = str(reprojected_output_path.resolve())
 
-        # with gdal.config_options(
-        #     {"GDAL_NUM_THREADS": "ALL_CPUS"}
-        # ):
-        gdal.Warp(dest_path, input_ds, options=warp_options)
+        ds = gdal.Warp(dest_path, input_ds, options=warp_options)
+
+        del ds
 
         return reprojected_output_path
 
@@ -184,5 +206,8 @@ class TilesPreprocessor:
         result = gdal.Translate(str(tile_nc_file), input_ds, options=translate_options)
 
         assert result is not None, f"Failed to create tile {tile_nc_file}"
+
+        del input_ds
+        del result
 
         return tile_nc_file

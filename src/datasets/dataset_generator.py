@@ -54,6 +54,8 @@ class DatasetGenerator:
             colorize=True,
             level="DEBUG" if self.debug else "INFO",
         )
+        gdal.UseExceptions()
+        gdal.SetCacheMax(0)
 
     async def generate(
         self,
@@ -421,6 +423,7 @@ class DatasetGenerator:
             )
 
             logger.info(f"Generated {len(tiles_path)} tiles!")
+            logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 
         return tiles_path, tiles_output_path
 
@@ -478,6 +481,7 @@ class DatasetGenerator:
         tiles_months_data: dict,
     ) -> dict:
         logger.info("Aggregating yearly data...")
+        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 
         year_data_aggregator = DataAggregator(output_format=self.output_format)
 
@@ -509,6 +513,9 @@ class DatasetGenerator:
                 )
 
             year_tiles_data_paths.append(tile_year_data_path)
+
+        logger.info("Yearly data aggregation done!")
+        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
 
         return {input_data_name: year_tiles_data_paths}
 
@@ -777,6 +784,8 @@ class DatasetGenerator:
                     break
 
             band_index += 1
+
+        del stacked_tile_ds
 
     def get_dynamic_input_data_years_range_for_target_years_range(
         self,

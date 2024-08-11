@@ -34,6 +34,7 @@ class FireOccurrenceTarget:
         self.semaphore = semaphore
 
         gdal.UseExceptions()
+        gdal.SetCacheMax(0)
 
     async def generate_target_for_years_ranges(self, years_ranges: list) -> dict:
 
@@ -195,6 +196,9 @@ class FireOccurrenceTarget:
             burn_values=[1],
         )
 
+        del shp_ds
+        del output_raster_ds
+
         return year, output_raster_path
 
     def combine_rasters(
@@ -218,6 +222,7 @@ class FireOccurrenceTarget:
             raster_band = raster_ds.GetRasterBand(1)
             raster_data = raster_band.ReadAsArray()
             combined_raster_data = np.maximum(combined_raster_data, raster_data)
+            del raster_ds
 
         driver = gdal.GetDriverByName(self.output_format)
         output_extension = get_extension(self.output_format)
@@ -251,5 +256,7 @@ class FireOccurrenceTarget:
         output_band = output_combined_raster_ds.GetRasterBand(1)
         output_band.Fill(0)
         output_band.WriteArray(combined_raster_data)
+
+        del output_combined_raster_ds
 
         return (years_range[0], years_range[-1]), output_combined_raster_path

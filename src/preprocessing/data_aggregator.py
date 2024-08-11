@@ -30,6 +30,9 @@ class DataAggregator:
     def __init__(self, output_format: str):
         self.output_format = output_format
 
+        gdal.UseExceptions()
+        gdal.SetCacheMax(0)
+
     async def aggregate_bands_by_average(
         self, input_dataset_path: Path, output_folder_path: Path
     ) -> Path:
@@ -71,6 +74,9 @@ class DataAggregator:
             output_dataset,
         )
 
+        del input_dataset
+        del output_dataset
+
         return output_file_path
 
     async def aggregate_bands_by_max(
@@ -103,6 +109,9 @@ class DataAggregator:
             get_final_output_band_data,
             output_dataset,
         )
+
+        del input_dataset
+        del output_dataset
 
         return output_file_path
 
@@ -178,6 +187,7 @@ class DataAggregator:
         if has_sub_datasets:
             first_band_dataset = gdal.Open(dataset.GetSubDatasets()[0][0])
             no_data_value = first_band_dataset.GetRasterBand(1).GetNoDataValue()
+            del first_band_dataset
         else:
             no_data_value = dataset.GetRasterBand(1).GetNoDataValue()
 
@@ -189,6 +199,7 @@ class DataAggregator:
         if has_sub_datasets:
             first_band_dataset = gdal.Open(dataset.GetSubDatasets()[0][0])
             xsize = first_band_dataset.RasterXSize
+            del first_band_dataset
         else:
             xsize = dataset.RasterXSize
 
@@ -200,6 +211,7 @@ class DataAggregator:
         if has_sub_datasets:
             first_band_dataset = gdal.Open(dataset.GetSubDatasets()[0][0])
             ysize = first_band_dataset.RasterYSize
+            del first_band_dataset
         else:
             ysize = dataset.RasterYSize
 
@@ -211,6 +223,7 @@ class DataAggregator:
         if has_sub_datasets:
             first_band_dataset = gdal.Open(dataset.GetSubDatasets()[0][0])
             geotransform = first_band_dataset.GetGeoTransform()
+            del first_band_dataset
         else:
             geotransform = dataset.GetGeoTransform()
 
@@ -222,6 +235,7 @@ class DataAggregator:
         if has_sub_datasets:
             first_band_dataset = gdal.Open(dataset.GetSubDatasets()[0][0])
             projection = first_band_dataset.GetProjection()
+            del first_band_dataset
         else:
             projection = dataset.GetProjection()
 
@@ -233,9 +247,9 @@ class DataAggregator:
         band_data = None
 
         if has_sub_datasets:
-            band_data = gdal.Open(
-                dataset.GetSubDatasets()[band_index - 1][0]
-            ).ReadAsArray()
+            band_ds = gdal.Open(dataset.GetSubDatasets()[band_index - 1][0])
+            band_data = band_ds.ReadAsArray()
+            del band_ds
         else:
             band_data = dataset.GetRasterBand(1).ReadAsArray()
 
@@ -282,6 +296,10 @@ class DataAggregator:
             get_final_output_band_data,
             output_dataset,
         )
+
+        for dataset in input_datasets:
+            del dataset
+        del output_dataset
 
         return output_file_path
 
@@ -331,5 +349,9 @@ class DataAggregator:
             get_final_output_band_data,
             output_dataset,
         )
+
+        for dataset in input_datasets:
+            del dataset
+        del output_dataset
 
         return output_file_path
