@@ -1,6 +1,7 @@
 import geopandas as gpd
 import asyncio
 import psutil
+from concurrent.futures import ThreadPoolExecutor
 from osgeo import gdal
 from typing import Optional
 from pathlib import Path
@@ -64,9 +65,7 @@ class TilesPreprocessor:
             f"RAM Usage after resize_pixels_and_reproject: {psutil.virtual_memory().percent}/100"
         )
 
-        tiles_paths = await asyncio.to_thread(
-            self.make_tiles, reprojected_raster_output_file
-        )
+        tiles_paths = await self.make_tiles(reprojected_raster_output_file)
 
         logger.debug(
             f"RAM Usage after make_tiles: {psutil.virtual_memory().percent}/100"
@@ -163,7 +162,7 @@ class TilesPreprocessor:
 
         return resample_algorithm
 
-    def make_tiles(self, input_dataset_file_path: Path) -> list:
+    async def make_tiles(self, input_dataset_file_path: Path) -> list:
         tile_folder = self.output_folder / "tiles/"
         tile_folder.mkdir(parents=True, exist_ok=True)
 
@@ -172,7 +171,19 @@ class TilesPreprocessor:
             for index, row in self.big_tiles_boundaries.iterrows()
         ]
 
-        return [self.make_tile(*arg) for arg in args]
+        results = []
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            loop = asyncio.get_running_loop()
+            tasks = []
+
+            for arg in args:
+                task = loop.run_in_executor(executor, self.make_tile, *arg)
+                tasks.append(task)
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        return results
 
     def make_tile(
         self,

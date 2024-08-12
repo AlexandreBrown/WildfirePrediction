@@ -1,7 +1,7 @@
 debug: false
 periods:
-  target_year_start_inclusive: 2001
-  target_year_end_inclusive: 2001
+  target_year_start_inclusive: 2023
+  target_year_end_inclusive: 2023
   month_start_inclusive: 5
   month_end_inclusive: 10
   target_period_length_in_years: 1
@@ -23,8 +23,9 @@ paths:
 no_data_fill_value: -99_999
 input_format: "netCDF"
 output_format: "GTiff"
-max_io_concurrency: 24
-max_cpu_concurrency: 12
+max_io_concurrency: 16
+max_cpu_concurrency: 10
+max_gdal_cache_size_in_mb: 96
 input_data:
     dynamic:
       era5_reanalysis_100m_u_component_of_wind:

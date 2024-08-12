@@ -4,6 +4,7 @@ import geopandas as gpd
 import json
 import asyncio
 import psutil
+import gc
 import multiprocessing as mp
 from loguru import logger
 from boundaries.canada_boundary import CanadaBoundary
@@ -176,7 +177,7 @@ class DatasetGenerator:
             dataset_folder_path, input_data_yearly_data_index
         )
 
-        await self.stack_data(
+        self.stack_data(
             input_data_yearly_data_index,
             tiles_names,
             dataset_folder_path,
@@ -214,7 +215,7 @@ class DatasetGenerator:
 
         logger.info(f"Processing {len(dynamic_input_data)} dynamic input data...")
 
-        with mp.Pool(processes=self.max_cpu_concurrency) as pool:
+        with mp.Pool(processes=self.max_cpu_concurrency, maxtasksperchild=1) as pool:
             input_data_yearly_data = pool.starmap(
                 self.get_dynamic_input_data_yearly_data_wrapper, args
             )
@@ -252,6 +253,8 @@ class DatasetGenerator:
         resolution_config: dict,
         projections_config: dict,
     ) -> dict:
+        logger.debug(f"GDAL Cache max inside process : {gdal.GetCacheMax()}")
+
         with logger.contextualize(input_data_name=input_data_name):
 
             year_range = self.get_dynamic_input_data_total_years_extent(
@@ -273,6 +276,8 @@ class DatasetGenerator:
                     projections_config,
                 )
                 yearly_data_for_1_input_data[year] = year_data_dict
+
+            await logger.complete()
 
         return yearly_data_for_1_input_data
 
@@ -433,8 +438,9 @@ class DatasetGenerator:
                 data_type=input_data_values["data_type"]
             )
 
-            logger.info(f"Generated {len(tiles_path)} tiles!")
-            logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
+            logger.debug(
+                f"Preprocessed tiles! RAM Usage : {psutil.virtual_memory().percent}/100"
+            )
 
         return tiles_path, tiles_output_path
 
@@ -599,7 +605,7 @@ class DatasetGenerator:
                     tiles_names.append(input_data_data_path.stem)
         return tiles_names
 
-    async def stack_data(
+    def stack_data(
         self,
         input_data_yearly_data_index: dict,
         tiles_names: list,
@@ -613,7 +619,7 @@ class DatasetGenerator:
         logger.info("Stacking data...")
 
         for target_years_range in target_years_ranges:
-            await self.stack_tiles_data(
+            self.stack_tiles_data(
                 input_data_yearly_data_index,
                 tiles_names,
                 dataset_folder_path,
@@ -624,7 +630,7 @@ class DatasetGenerator:
                 target_years_range,
             )
 
-    async def stack_tiles_data(
+    def stack_tiles_data(
         self,
         input_data_yearly_data_index: dict,
         tiles_names: list,
@@ -639,8 +645,6 @@ class DatasetGenerator:
             f"Stacking data for target years range: [{target_years_range[0]}, {target_years_range[-1]}]..."
         )
 
-        semaphore = asyncio.Semaphore(self.max_io_concurrency)
-
         stacked_input_data_folder_path = (
             dataset_folder_path
             / Path("input_data")
@@ -653,26 +657,19 @@ class DatasetGenerator:
             f"Stacked input data folder path: {str(stacked_input_data_folder_path)}"
         )
 
-        tasks = set()
-        for tile_name in tiles_names:
-            async with semaphore:
-                task = asyncio.create_task(
-                    asyncio.to_thread(
-                        self.stack_tile_data,
-                        dynamic_input_data,
-                        static_input_data,
-                        input_data_yearly_data_index,
-                        tile_name,
-                        periods_config,
-                        resolution_config,
-                        target_years_range,
-                        stacked_input_data_folder_path,
-                    )
-                )
-                tasks.add(task)
-                task.add_done_callback(tasks.discard)
+        gc.collect()
 
-        await asyncio.gather(*tasks, return_exceptions=True)
+        for tile_name in tiles_names:
+            self.stack_tile_data(
+                dynamic_input_data,
+                static_input_data,
+                input_data_yearly_data_index,
+                tile_name,
+                periods_config,
+                resolution_config,
+                target_years_range,
+                stacked_input_data_folder_path,
+            )
 
     def stack_tile_data(
         self,

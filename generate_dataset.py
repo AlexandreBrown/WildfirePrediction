@@ -1,6 +1,6 @@
 import asyncio
 import hydra
-import sys
+from datetime import datetime
 from loguru import logger
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
@@ -18,8 +18,13 @@ from logs_formatting.formats import default_project_format
 def main(cfg: DictConfig):
     logger.remove()
 
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_folder_path = Path(f"logs/generate_dataset/{timestamp}/")
+    log_folder_path.mkdir(parents=True, exist_ok=True)
+    log_file_name = log_folder_path / "output.log"
+
     logger.add(
-        sys.stdout,
+        str(log_file_name),
         format=default_project_format,
         colorize=True,
         level="DEBUG" if cfg.debug else "INFO",
@@ -60,6 +65,9 @@ def main(cfg: DictConfig):
 
     logger.info(f"Max IO Concurrency : {cfg.max_io_concurrency}")
     logger.info(f"Max CPU Concurrency : {cfg.max_cpu_concurrency}")
+    logger.info(f"Max GDAL Cache Size: {cfg.max_gdal_cache_size_in_mb}MB")
+
+    gdal_cache_max_in_bytes = 1_000_000 * cfg.max_gdal_cache_size_in_mb
 
     dataset_generator = DatasetGenerator(
         canada_boundary,
@@ -73,8 +81,6 @@ def main(cfg: DictConfig):
         max_io_concurrency=cfg.max_io_concurrency,
         max_cpu_concurrency=cfg.max_cpu_concurrency,
     )
-
-    gdal_cache_max_in_bytes = 128_000_000
 
     with gdal.config_options({"GDAL_CACHEMAX": str(gdal_cache_max_in_bytes)}):
         asyncio.run(
