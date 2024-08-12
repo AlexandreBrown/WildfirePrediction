@@ -82,22 +82,21 @@ class TilesPreprocessor:
 
         no_data_value = self.get_no_data_value(raw_band)
 
-        vrt_options = gdal.BuildVRTOptions(
-            separate=False,
-            strict=True,
-            srcNodata=no_data_value,
-            VRTNodata=no_data_value,
+        raw_tiles_merged_output_path = (
+            self.output_folder / f"raw_tiles_merged{get_extension(self.output_format)}"
         )
-
-        raw_tiles_merged_output_path = self.output_folder / "raw_tiles_merged.vrt"
 
         del raw_tile_ds
 
-        return gdal.BuildVRT(
-            destName=str(raw_tiles_merged_output_path.resolve()),
+        ds = gdal.Warp(
+            destNameOrDestDS=str(raw_tiles_merged_output_path.resolve()),
             srcDSOrSrcDSTab=raw_tiles_paths,
-            options=vrt_options,
+            srcNodata=no_data_value,
+            dstNodata=no_data_value,
+            format=self.output_format,
         )
+
+        return ds
 
     def get_raw_tiles_paths(self) -> list:
         extension = get_extension(self.input_format)
