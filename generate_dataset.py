@@ -1,4 +1,3 @@
-import asyncio
 import hydra
 from datetime import datetime
 from loguru import logger
@@ -7,10 +6,9 @@ from omegaconf import OmegaConf
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.canada_boundary_data_source import CanadaBoundaryDataSource
 from grid.square_meters_grid import SquareMetersGrid
-from datasets.dataset_generator import DatasetGenerator
+from datasets.dataset_generator_v2 import DatasetGeneratorV2
 from pathlib import Path
 from preprocessing.no_data_value_preprocessor import NoDataValuePreprocessor
-from osgeo import gdal
 from logs_formatting.formats import default_project_format
 
 
@@ -67,9 +65,7 @@ def main(cfg: DictConfig):
     logger.info(f"Max CPU Concurrency : {cfg.max_cpu_concurrency}")
     logger.info(f"Max GDAL Cache Size: {cfg.max_gdal_cache_size_in_mb}MB")
 
-    gdal_cache_max_in_bytes = 1_000_000 * cfg.max_gdal_cache_size_in_mb
-
-    dataset_generator = DatasetGenerator(
+    dataset_generator = DatasetGeneratorV2(
         canada_boundary,
         grid,
         input_folder_path=Path(cfg.paths.input_folder_path),
@@ -82,16 +78,13 @@ def main(cfg: DictConfig):
         max_cpu_concurrency=cfg.max_cpu_concurrency,
     )
 
-    with gdal.config_options({"GDAL_CACHEMAX": str(gdal_cache_max_in_bytes)}):
-        asyncio.run(
-            dataset_generator.generate(
-                dynamic_input_data=dynamic_input_data,
-                static_input_data=static_input_data,
-                periods_config=OmegaConf.to_container(cfg.periods),
-                resolution_config=OmegaConf.to_container(cfg.resolution),
-                projections_config=OmegaConf.to_container(cfg.projections),
-            )
-        )
+    dataset_generator.generate(
+        dynamic_input_data=dynamic_input_data,
+        static_input_data=static_input_data,
+        periods_config=OmegaConf.to_container(cfg.periods),
+        resolution_config=OmegaConf.to_container(cfg.resolution),
+        projections_config=OmegaConf.to_container(cfg.projections),
+    )
 
 
 if __name__ == "__main__":
