@@ -3,7 +3,7 @@ periods:
   target_year_start_inclusive: 2023
   target_year_end_inclusive: 2023
   month_start_inclusive: 5
-  month_end_inclusive: 5
+  month_end_inclusive: 10
   target_period_length_in_years: 1
   input_data_affected_by_fires_period_length_in_years: 1
 boundaries:
@@ -15,6 +15,7 @@ resolution:
   resample_algorithm_continuous: "bilinear"
   resample_algorithm_categorical: "near"
 projections:
+  source_srid: 4326
   target_srid: 3978
 paths:
   input_folder_path: "data/download/"

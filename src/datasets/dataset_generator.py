@@ -471,6 +471,8 @@ class DatasetGenerator:
         )
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
 
+        source_srid = self.config["projections"]["source_srid"]
+
         target_srid = self.config["projections"]["target_srid"]
 
         pixel_size_in_meters = self.config["resolution"]["pixel_size_in_meters"]
@@ -478,7 +480,7 @@ class DatasetGenerator:
         resampling_algorithm = self.get_resampling_algorithm(data_type)
 
         self.run_command(
-            f"gdalwarp -multi -r {resampling_algorithm} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -of GTiff {str(input_file)} {str(output_file_path)}"
+            f"gdalwarp -multi -r {resampling_algorithm} -s_srs EPSG:{source_srid} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -of GTiff {str(input_file)} {str(output_file_path)}"
         )
 
         return output_file_path
