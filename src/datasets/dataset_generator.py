@@ -2,7 +2,7 @@ import geopandas as gpd
 import uuid
 import subprocess
 import numpy as np
-import shutil
+import multiprocessing as mp
 from osgeo import gdal
 from pathlib import Path
 from loguru import logger
@@ -100,7 +100,7 @@ class DatasetGenerator:
         for years_range, combined_raster_path in target_ranges_combined_raster.items():
             with logger.contextualize(years_range=str(years_range)):
                 tiles_preprocessing_output_folder = (
-                    tmp_target_folder_path / f"{years_range[0]}_{years_range[-1]}/"
+                    tmp_target_folder_path / f"tiles_{years_range[0]}_{years_range[-1]}/"
                 )
 
                 logger.info("Resizing and reprojecting...")
@@ -119,6 +119,7 @@ class DatasetGenerator:
                     resized_file_path,
                     years_range_output_folder_path,
                     big_tiles_boundaries,
+                    create_child_folder=False
                 )
 
         logger.info("Generating targets DONE !")
@@ -193,41 +194,46 @@ class DatasetGenerator:
         input_data_index: dict,
         big_tiles_boundaries: gpd.GeoDataFrame,
     ):
-        for target_years_range in target_years_ranges:
-            logger.info(f"Stacking data for target years range {target_years_range}...")
-            target_years_range_output_folder = (
-                output_folder_path
-                / Path("input_data")
-                / Path(f"{target_years_range[0]}_{target_years_range[-1]}")
-            )
-            target_years_range_output_folder.mkdir(parents=True, exist_ok=True)
+        with mp.Pool(processes=self.max_cpu_concurrency) as pool:
+            args = [
+                (output_folder_path, target_years_range, input_data_index, big_tiles_boundaries)
+                for target_years_range in target_years_ranges
+            ]
+            pool.starmap(self.stack_input_data_for_years_range, args)
+            
+    def stack_input_data_for_years_range(self, output_folder_path: Path, target_years_range: range, input_data_index: dict, big_tiles_boundaries: gpd.GeoDataFrame):
+        logger.info(f"Stacking data for target years range {target_years_range}...")
+        target_years_range_output_folder = (
+            output_folder_path
+            / Path("input_data")
+            / Path(f"{target_years_range[0]}_{target_years_range[-1]}")
+        )
+        target_years_range_output_folder.mkdir(parents=True, exist_ok=True)
 
-            for tile_relative_index in range(len(big_tiles_boundaries)):
-                tile_output_file = (
-                    target_years_range_output_folder
-                    / f"tile_{tile_relative_index}{get_extension('gtiff')}"
+        for tile_relative_index in range(len(big_tiles_boundaries)):
+
+            files_to_stack = []
+
+            for data_name, years_index in input_data_index.items():
+                is_affected_by_fires = self.get_is_affected_by_fires(data_name)
+
+                data_years_range = (
+                    self.get_dynamic_input_data_years_range_for_target_years_range(
+                        target_years_range, is_affected_by_fires
+                    )
                 )
 
-                files_to_stack = []
-
-                for data_name, years_index in input_data_index.items():
-                    is_affected_by_fires = self.get_is_affected_by_fires(data_name)
-
-                    data_years_range = (
-                        self.get_dynamic_input_data_years_range_for_target_years_range(
-                            target_years_range, is_affected_by_fires
-                        )
+                for year in data_years_range:
+                    data_year_tiles_paths = sorted(list(years_index[year]))
+                    files_to_stack.append(
+                        str(data_year_tiles_paths[tile_relative_index])
                     )
 
-                    for year in data_years_range:
-                        data_year_tiles_paths = sorted(list(years_index[year]))
-                        files_to_stack.append(
-                            str(data_year_tiles_paths[tile_relative_index])
-                        )
+            self.stack_files(files_to_stack, target_years_range_output_folder, tile_relative_index)
 
-                self.stack_files(files_to_stack, tile_output_file)
-
-    def stack_files(self, files_to_stack: list, output_file: Path):
+    def stack_files(self, files_to_stack: list, output_folder: Path, tile_relative_index: int):
+        output_file  = output_folder / f"tile_{tile_relative_index}{get_extension('gtiff')}"
+            
         vrt_file = output_file.with_suffix(".vrt")
 
         gdalbuildvrt_cmd = f"gdalbuildvrt -separate {str(vrt_file)} " + " ".join(
@@ -236,7 +242,7 @@ class DatasetGenerator:
         self.run_command(gdalbuildvrt_cmd)
 
         gdal_translate_cmd = (
-            f"gdal_translate -of GTiff {str(vrt_file)} {str(output_file)}"
+            f"gdal_translate -strict -of GTiff {str(vrt_file)} {str(output_file)}"
         )
         self.run_command(gdal_translate_cmd)
 
@@ -284,9 +290,8 @@ class DatasetGenerator:
             for data_name, data_info in dynamic_data.items()
         ]
 
-        input_data_years_indexes = []
-        for arg in args:
-            input_data_years_indexes.append(self.process_dynamic_input_data_years(*arg))
+        with mp.Pool(processes=self.max_cpu_concurrency) as pool:
+            input_data_years_indexes = pool.starmap(self.process_dynamic_input_data_years, args)
 
         input_data_index = {}
         for input_data_years_index in input_data_years_indexes:
@@ -379,9 +384,8 @@ class DatasetGenerator:
             for data_name, data_info in static_data.items()
         ]
 
-        inputs_data_files_paths = []
-        for arg in args:
-            inputs_data_files_paths.append(self.process_static_input_data_layer(*arg))
+        with mp.Pool(processes=self.max_cpu_concurrency) as pool:
+            inputs_data_files_paths = pool.starmap(self.process_static_input_data_layer, args)
 
         all_years = set()
         for year_data in input_data_index.values():
@@ -442,9 +446,13 @@ class DatasetGenerator:
         input_file: Path,
         output_folder_path: Path,
         big_tiles_boundaries: gpd.GeoDataFrame,
+        create_child_folder: bool = True
     ) -> list:
-        tiles_output_folder = output_folder_path / "tiles"
-        tiles_output_folder.mkdir(parents=True, exist_ok=True)
+        if create_child_folder:
+            tiles_output_folder = output_folder_path / "tiles"
+            tiles_output_folder.mkdir(parents=True, exist_ok=True)
+        else:
+            tiles_output_folder = output_folder_path
 
         tiles_paths = []
 

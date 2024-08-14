@@ -142,7 +142,9 @@ class FireOccurrenceTarget:
         result = await asyncio.to_thread(self.fire_data_source.download, year)
         year_fire_polygons = result.to_crs(epsg=self.target_srid)
 
-        output_path = self.output_folder_path / f"{year}.shp"
+        output_folder = self.output_folder_path / f"fire_polygons_{year}"
+        output_folder.mkdir(parents=True, exist_ok=True)
+        output_path = output_folder / f"{year}.shp"
 
         year_fire_polygons.to_file(str(output_path.resolve()))
 
@@ -158,7 +160,9 @@ class FireOccurrenceTarget:
         years_fire_polygons_paths: dict,
     ) -> tuple:
         output_extension = get_extension(self.output_format)
-        output_raster_path = self.output_folder_path / f"{year}{output_extension}"
+        output_folder = self.output_folder_path / f"rasterized_fire_polygons_{year}"
+        output_folder.mkdir(parents=True, exist_ok=True)
+        output_raster_path = output_folder / f"{year}{output_extension}"
         nb_bands = 1
         output_raster_ds = gdal.GetDriverByName(self.output_format).Create(
             str(output_raster_path.resolve()),
@@ -228,7 +232,7 @@ class FireOccurrenceTarget:
         output_extension = get_extension(self.output_format)
         output_combined_raster_path = (
             self.output_folder_path
-            / f"target_{years_range[0]}_{years_range[-1]}"
+            / f"target_combined_{years_range[0]}_{years_range[-1]}"
             / f"combined{output_extension}"
         )
         output_combined_raster_path.parent.mkdir(parents=True, exist_ok=True)
