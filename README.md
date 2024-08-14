@@ -99,13 +99,6 @@ Static data is the data that does not change over time or for which we only have
 - This is required to download the ERA5 data.
 - Accept the terms of use for the ERA5 data (scroll down to terms of use section and click accept) : https://cds-beta.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=download
 
-### System Dependencies
-1. Install `tcmalloc` memory allocator  
-    ```shell
-    sudo apt-get install libtcmalloc-minimal4 -y
-    ```
-    - This is required so that GDAL uses tcmalloc memory allocator which helps reducing the amount of virtual and resident memory used ([see this page for more details](https://gdal.org/user/multithreading.html#ram-fragmentation-and-multi-threading))
-
 ## Pipeline Steps
 ### Download Data
 Here is an overview of how the data is download for each data source and the various steps involved (not including resume logic and low level details) :  

@@ -1,103 +1,129 @@
-import uuid
-import shutil
 import geopandas as gpd
-import json
-import asyncio
-import psutil
-import gc
-import multiprocessing as mp
+import uuid
+import subprocess
+import numpy as np
+import shutil
+from osgeo import gdal
+from pathlib import Path
 from loguru import logger
 from boundaries.canada_boundary import CanadaBoundary
-from data_sources.nbac_fire_data_source import NbacFireDataSource
 from grid.square_meters_grid import SquareMetersGrid
-from preprocessing.data_aggregator import DataAggregator
-from preprocessing.no_data_value_preprocessor import NoDataValuePreprocessor
-from preprocessing.tiles_preprocessor import TilesPreprocessor
-from pathlib import Path
-from collections import defaultdict
-from osgeo import gdal
+from data_sources.nbac_fire_data_source import NbacFireDataSource
 from targets.fire_occurrence_target import FireOccurrenceTarget
-from raster_io.read import open_dataset
-from raster_io.read import get_extension
+from raster_io.read import get_extension, get_formatted_file_path
 
 
 class DatasetGenerator:
     def __init__(
-        self,
-        canada_boundary: CanadaBoundary,
-        grid: SquareMetersGrid,
-        input_folder_path: Path,
-        output_folder_path: Path,
-        debug: bool,
-        no_data_value_preprocessor: NoDataValuePreprocessor,
-        input_format: str,
-        output_format: str,
-        max_io_concurrency: int,
-        max_cpu_concurrency: int,
+        self, canada_boundary: CanadaBoundary, grid: SquareMetersGrid, config: dict
     ):
         self.canada_boundary = canada_boundary
         self.grid = grid
-        self.input_folder_path = input_folder_path
-        self.output_folder_path = output_folder_path
-        self.debug = debug
-        self.no_data_value_preprocessor = no_data_value_preprocessor
-        self.input_format = input_format
-        self.output_format = output_format
-        self.max_io_concurrency = max_io_concurrency
-        self.max_cpu_concurrency = max_cpu_concurrency
+        self.input_folder_path = Path(config["paths"]["input_folder_path"])
+        self.output_folder_path = Path(config["paths"]["output_folder_path"])
+        self.debug = config["debug"]
+        self.max_io_concurrency = config["max_io_concurrency"]
+        self.max_cpu_concurrency = config["max_cpu_concurrency"]
+        self.config = config
         gdal.UseExceptions()
 
-    async def generate(
-        self,
-        dynamic_input_data: list,
-        static_input_data: list,
-        periods_config: dict,
-        resolution_config: dict,
-        projections_config: dict,
-    ):
+    async def generate_dataset(self):
         logger.info("Generating dataset...")
 
-        logger.info("Generating big tiles boundaries...")
-        big_tiles_boundaries = self.grid.get_tiles_boundaries(
-            self.canada_boundary.boundary
-        )
-        logger.info(f"Generated {len(big_tiles_boundaries)} big tiles boundaries!")
-
-        dataset_folder_path = self.get_dataset_folder_path()
+        dataset_folder_path = self.create_dataset_folder_path()
 
         try:
-            target_years_ranges = self.generate_target_years_ranges(periods_config)
+            logger.info("Loading boundaries...")
+            self.canada_boundary.load(provinces=self.config["boundaries"]["provinces"])
 
-            tmp_folder_path = self.get_dataset_tmp_folder_path(dataset_folder_path)
+            logger.info("Generating big tiles boundaries...")
+            big_tiles_boundaries = self.grid.get_tiles_boundaries(
+                self.canada_boundary.boundary
+            )
+            logger.info(f"Generated {len(big_tiles_boundaries)} big tiles boundaries!")
 
-            await self.process_input_data(
+            tmp_folder_path = self.create_dataset_tmp_folder_path(dataset_folder_path)
+
+            target_years_ranges = self.generate_target_years_ranges()
+
+            self.process_input_data(
                 dataset_folder_path,
                 tmp_folder_path,
                 big_tiles_boundaries,
-                dynamic_input_data,
-                static_input_data,
-                periods_config,
-                resolution_config,
-                projections_config,
                 target_years_ranges,
             )
 
             await self.generate_targets(
                 dataset_folder_path,
                 tmp_folder_path,
-                target_years_ranges,
                 big_tiles_boundaries,
-                resolution_config,
-                projections_config,
+                target_years_ranges,
             )
 
-            self.cleanup_tmp_folder(tmp_folder_path)
         except BaseException as e:
             logger.error(f"Error: {e}")
-            self.cleanup_dataset_folder(dataset_folder_path)
             raise e
 
-    def get_dataset_folder_path(self) -> Path:
+    async def generate_targets(
+        self,
+        dataset_folder_path: Path,
+        tmp_path: Path,
+        big_tiles_boundaries: gpd.GeoDataFrame,
+        target_years_ranges: list,
+    ):
+        logger.info("Generating targets...")
+
+        fire_data_source = NbacFireDataSource(Path(self.input_folder_path))
+
+        tmp_target_folder_path = tmp_path / Path("target")
+
+        target = FireOccurrenceTarget(
+            fire_data_source=fire_data_source,
+            boundary=self.canada_boundary,
+            target_pixel_size_in_meters=self.config["resolution"][
+                "pixel_size_in_meters"
+            ],
+            target_srid=self.config["projections"]["target_srid"],
+            output_folder_path=tmp_target_folder_path,
+            output_format="GTiff",
+            max_io_concurrency=self.max_io_concurrency,
+            max_cpu_concurrency=self.max_cpu_concurrency,
+        )
+
+        target_ranges_combined_raster = await target.generate_target_for_years_ranges(
+            target_years_ranges
+        )
+
+        dataset_targets_output_folder_path = dataset_folder_path / Path("target")
+        dataset_targets_output_folder_path.mkdir(parents=True, exist_ok=True)
+
+        for years_range, combined_raster_path in target_ranges_combined_raster.items():
+            with logger.contextualize(years_range=str(years_range)):
+                tiles_preprocessing_output_folder = (
+                    tmp_target_folder_path / f"{years_range[0]}_{years_range[-1]}/"
+                )
+
+                logger.info("Resizing and reprojecting...")
+                data_type = "categorical"
+                resized_file_path = self.resize_and_reproject(
+                    combined_raster_path, tiles_preprocessing_output_folder, data_type
+                )
+
+                logger.info("Creating tiles...")
+                years_range_output_folder_path = (
+                    dataset_targets_output_folder_path
+                    / Path(f"{years_range[0]}_{years_range[-1]}")
+                )
+                years_range_output_folder_path.mkdir(parents=True, exist_ok=True)
+                self.create_tiles(
+                    resized_file_path,
+                    years_range_output_folder_path,
+                    big_tiles_boundaries,
+                )
+
+        logger.info("Generating targets DONE !")
+
+    def create_dataset_folder_path(self) -> Path:
         dataset_uuid = self.get_dataset_uuid()
 
         dataset_folder_path = self.output_folder_path / Path(dataset_uuid)
@@ -111,15 +137,14 @@ class DatasetGenerator:
         logger.info(f"Dataset UUID: {ds_uuid}")
         return ds_uuid
 
-    def get_dataset_tmp_folder_path(self, dataset_folder_path: Path) -> Path:
-        tmp_folder_path = dataset_folder_path / Path("tmp")
-        tmp_folder_path.mkdir(parents=True, exist_ok=True)
-        return tmp_folder_path
-
-    def generate_target_years_ranges(self, periods_config: dict) -> list:
-        target_year_start_inclusive = periods_config["target_year_start_inclusive"]
-        target_year_end_inclusive = periods_config["target_year_end_inclusive"]
-        target_period_length_in_years = periods_config["target_period_length_in_years"]
+    def generate_target_years_ranges(self) -> list:
+        target_year_start_inclusive = self.config["periods"][
+            "target_year_start_inclusive"
+        ]
+        target_year_end_inclusive = self.config["periods"]["target_year_end_inclusive"]
+        target_period_length_in_years = self.config["periods"][
+            "target_period_length_in_years"
+        ]
         target_years_ranges = []
 
         for target_year_start in range(
@@ -135,680 +160,113 @@ class DatasetGenerator:
 
         return target_years_ranges
 
-    async def process_input_data(
+    def create_dataset_tmp_folder_path(self, dataset_folder_path: Path) -> Path:
+        tmp_folder_path = dataset_folder_path / Path("tmp")
+        tmp_folder_path.mkdir(parents=True, exist_ok=True)
+        return tmp_folder_path
+
+    def process_input_data(
         self,
         dataset_folder_path: Path,
-        tmp_path: Path,
+        tmp_folder_path: Path,
         big_tiles_boundaries: gpd.GeoDataFrame,
-        dynamic_input_data: list,
-        static_input_data: list,
-        periods_config: dict,
-        resolution_config: dict,
-        projections_config: dict,
         target_years_ranges: list,
     ):
-        logger.info("Processing input data...")
-
-        processed_data_folder_path = tmp_path / Path("processed_input_data")
-
-        processed_data_folder_path.mkdir(parents=True, exist_ok=True)
-
-        input_data_yearly_data_index = await self.process_dynamic_input_data(
-            processed_data_folder_path,
-            dynamic_input_data,
-            big_tiles_boundaries,
-            periods_config,
-            resolution_config,
-            projections_config,
+        input_data_index = self.process_dynamic_input_data(
+            tmp_folder_path, big_tiles_boundaries
         )
-
-        input_data_yearly_data_index = await self.process_static_data(
-            processed_data_folder_path,
-            input_data_yearly_data_index,
-            big_tiles_boundaries,
-            static_input_data,
-            resolution_config,
-            projections_config,
+        self.process_static_input_data(
+            tmp_folder_path, big_tiles_boundaries, input_data_index
         )
-
-        tiles_names = self.get_tiles_names(input_data_yearly_data_index)
-
-        self.log_input_data_processing_results(
-            dataset_folder_path, input_data_yearly_data_index
-        )
-
-        self.stack_data(
-            input_data_yearly_data_index,
-            tiles_names,
+        self.stack_input_data(
             dataset_folder_path,
-            periods_config,
-            resolution_config,
-            dynamic_input_data,
-            static_input_data,
             target_years_ranges,
+            input_data_index,
+            big_tiles_boundaries,
         )
+        return input_data_index
 
-    async def process_dynamic_input_data(
+    def stack_input_data(
         self,
-        processed_data_folder_path: Path,
-        dynamic_input_data: list,
-        big_tiles_boundaries: gpd.GeoDataFrame,
-        periods_config: dict,
-        resolution_config: dict,
-        projections_config: dict,
-    ) -> dict:
-
-        args = [
-            (
-                processed_data_folder_path,
-                input_data_name,
-                input_data_values,
-                input_data_values["layer"],
-                input_data_values["is_affected_by_fires"],
-                big_tiles_boundaries,
-                periods_config,
-                resolution_config,
-                projections_config,
-            )
-            for input_data_name, input_data_values in dynamic_input_data
-        ]
-
-        logger.info(f"Processing {len(dynamic_input_data)} dynamic input data...")
-
-        with mp.Pool(processes=self.max_cpu_concurrency, maxtasksperchild=1) as pool:
-            input_data_yearly_data = pool.starmap(
-                self.get_dynamic_input_data_yearly_data_wrapper, args
-            )
-
-        logger.info(f"Processed {len(dynamic_input_data)} dynamic input!")
-
-        formatted_input_data_yearly_data_index: dict = {}
-
-        for yearly_data_for_1_input_data in input_data_yearly_data:
-            for year, year_data_dict in yearly_data_for_1_input_data.items():
-                current_input_data_name = list(year_data_dict.keys())[0]
-                current_input_data_yearly_data_paths = list(year_data_dict.values())[0]
-
-                if formatted_input_data_yearly_data_index.get(year) is None:
-                    formatted_input_data_yearly_data_index[year] = {}
-
-                formatted_input_data_yearly_data_index[year][
-                    current_input_data_name
-                ] = current_input_data_yearly_data_paths
-
-        return formatted_input_data_yearly_data_index
-
-    def get_dynamic_input_data_yearly_data_wrapper(self, *arg):
-        return asyncio.run(self.get_dynamic_input_data_yearly_data(*arg))
-
-    async def get_dynamic_input_data_yearly_data(
-        self,
-        processed_data_folder_path: Path,
-        input_data_name: str,
-        input_data_values: dict,
-        layer_name: str,
-        is_affected_by_fires: bool,
-        big_tiles_boundaries: gpd.GeoDataFrame,
-        periods_config: dict,
-        resolution_config: dict,
-        projections_config: dict,
-    ) -> dict:
-        logger.debug(f"GDAL Cache max inside process : {gdal.GetCacheMax()}")
-
-        with logger.contextualize(input_data_name=input_data_name):
-
-            year_range = self.get_dynamic_input_data_total_years_extent(
-                periods_config, is_affected_by_fires
-            )
-
-            yearly_data_for_1_input_data = {}
-
-            for year in year_range:
-                year, year_data_dict = await self.get_dynamic_input_data_year_data(
-                    processed_data_folder_path,
-                    year,
-                    input_data_name,
-                    layer_name,
-                    input_data_values,
-                    big_tiles_boundaries,
-                    periods_config,
-                    resolution_config,
-                    projections_config,
-                )
-                yearly_data_for_1_input_data[year] = year_data_dict
-
-            await logger.complete()
-
-        return yearly_data_for_1_input_data
-
-    async def get_dynamic_input_data_year_data(
-        self,
-        processed_data_folder_path: Path,
-        year: int,
-        input_data_name: str,
-        layer_name: str,
-        input_data_values: dict,
-        big_tiles_boundaries: gpd.GeoDataFrame,
-        periods_config: dict,
-        resolution_config: dict,
-        projections_config: dict,
-    ) -> tuple:
-        with logger.contextualize(year=year):
-            tiles_months_data, tiles_months_output_paths = (
-                await self.get_dynamic_input_data_tiles_months_data_for_1_year(
-                    processed_data_folder_path / Path(f"{year}"),
-                    year,
-                    input_data_name,
-                    layer_name,
-                    input_data_values,
-                    big_tiles_boundaries,
-                    periods_config,
-                    resolution_config,
-                    projections_config,
-                )
-            )
-
-            year_data_dict = await self.aggregate_dynamic_input_data_yearly(
-                input_data_name,
-                input_data_values,
-                processed_data_folder_path,
-                year,
-                tiles_months_data,
-            )
-
-            await asyncio.to_thread(self.cleanup_months_data, tiles_months_output_paths)
-
-        return (year, year_data_dict)
-
-    def cleanup_months_data(self, months_data_paths: dict):
-        for month_data_path in months_data_paths:
-            shutil.rmtree(month_data_path)
-
-    def get_dynamic_input_data_total_years_extent(
-        self, periods_config: dict, is_affected_by_fires: bool
-    ) -> range:
-        if is_affected_by_fires:
-            year_start_inclusive = (
-                periods_config["target_year_start_inclusive"]
-                - periods_config["input_data_affected_by_fires_period_length_in_years"]
-            )
-            year_end_inclusive = (
-                periods_config["target_year_end_inclusive"]
-                - periods_config["target_period_length_in_years"]
-            )
-        else:
-            year_start_inclusive = periods_config["target_year_start_inclusive"]
-            year_end_inclusive = periods_config["target_year_end_inclusive"]
-
-        return range(year_start_inclusive, year_end_inclusive + 1)
-
-    async def get_dynamic_input_data_tiles_months_data_for_1_year(
-        self,
-        processed_data_year_output_folder_path: Path,
-        year: int,
-        input_data_name: str,
-        layer_name: str,
-        input_data_values: dict,
-        big_tiles_boundaries: gpd.GeoDataFrame,
-        periods_config: dict,
-        resolution_config: dict,
-        projections_config: dict,
-    ) -> tuple:
-
-        months_range = range(
-            periods_config["month_start_inclusive"],
-            periods_config["month_end_inclusive"] + 1,
-        )
-
-        months_tiles = []
-
-        for month in months_range:
-            month_tiles = await self.get_dynamic_input_data_tiles_for_1_month(
-                processed_data_year_output_folder_path,
-                year,
-                month,
-                input_data_name,
-                layer_name,
-                input_data_values,
-                big_tiles_boundaries,
-                resolution_config,
-                projections_config,
-            )
-            months_tiles.append(month_tiles)
-
-        tiles_months_output_paths = [
-            tiles_output_path for _, tiles_output_path in months_tiles
-        ]
-
-        tiles_months_data = await self.aggregate_dynamic_input_data_monthly(
-            months_tiles, input_data_values
-        )
-
-        return tiles_months_data, tiles_months_output_paths
-
-    async def get_dynamic_input_data_tiles_for_1_month(
-        self,
-        processed_data_year_output_folder_path: Path,
-        year: int,
-        month: int,
-        input_data_name: str,
-        layer_name: str,
-        input_data_values: dict,
-        big_tiles_boundaries: gpd.GeoDataFrame,
-        resolution_config: dict,
-        projections_config: dict,
-    ) -> tuple:
-        with logger.contextualize(month=month):
-            logger.info("Processing...")
-            logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
-
-            raw_tiles_folder = (
-                self.input_folder_path
-                / Path(f"{year}")
-                / Path(f"{month}")
-                / Path(f"{input_data_name}")
-            )
-
-            tiles_output_path = (
-                processed_data_year_output_folder_path
-                / Path(f"{month}")
-                / Path(f"{input_data_name}")
-            )
-
-            tiles = TilesPreprocessor(
-                raw_tiles_folder=raw_tiles_folder,
-                tile_size_in_pixels=resolution_config["tile_size_in_pixels"],
-                pixel_size_in_meters=resolution_config["pixel_size_in_meters"],
-                output_folder=tiles_output_path,
-                big_tiles_boundaries=big_tiles_boundaries,
-                input_format=self.input_format,
-                output_format=self.output_format,
-                layer_name=layer_name,
-                source_srid=projections_config["source_srid"],
-                target_srid=projections_config["target_srid"],
-                resample_algorithm_continuous=resolution_config[
-                    "resample_algorithm_continuous"
-                ],
-                resample_algorithm_categorical=resolution_config[
-                    "resample_algorithm_categorical"
-                ],
-            )
-
-            tiles_path = await tiles.preprocess_tiles(
-                data_type=input_data_values["data_type"]
-            )
-
-            logger.debug(
-                f"Preprocessed tiles! RAM Usage : {psutil.virtual_memory().percent}/100"
-            )
-
-        return tiles_path, tiles_output_path
-
-    async def aggregate_dynamic_input_data_monthly(
-        self,
-        months_tiles: list,
-        input_data_values: dict,
-    ) -> dict:
-        logger.info("Aggregating monthly data...")
-        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
-
-        month_data_aggregator = DataAggregator(output_format=self.output_format)
-
-        tiles_months_data = defaultdict(list)
-
-        for tiles_path, tiles_output_path in months_tiles:
-            month_aggregated_output_folder_path = tiles_output_path / Path(
-                "month_aggregated_data"
-            )
-            for tile_path in tiles_path:
-                if input_data_values["aggregate_by"] == "average":
-                    tile_path_monthly_aggregated_data = (
-                        await month_data_aggregator.aggregate_bands_by_average(
-                            input_dataset_path=tile_path,
-                            output_folder_path=month_aggregated_output_folder_path,
-                        )
-                    )
-                elif input_data_values["aggregate_by"] == "max":
-                    tile_path_monthly_aggregated_data = (
-                        await month_data_aggregator.aggregate_bands_by_max(
-                            input_dataset_path=tile_path,
-                            output_folder_path=month_aggregated_output_folder_path,
-                        )
-                    )
-                else:
-                    raise ValueError(
-                        f"Unknown aggregation method: {input_data_values['aggregate_by']}"
-                    )
-
-                tile_name = tile_path.stem
-
-                tiles_months_data[tile_name].append(tile_path_monthly_aggregated_data)
-
-        logger.info("Monthly data aggregation done!")
-        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
-
-        return tiles_months_data
-
-    async def aggregate_dynamic_input_data_yearly(
-        self,
-        input_data_name: str,
-        input_data_values: dict,
-        processed_data_folder_path: Path,
-        year: int,
-        tiles_months_data: dict,
-    ) -> dict:
-        logger.info("Aggregating yearly data...")
-        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
-
-        year_data_aggregator = DataAggregator(output_format=self.output_format)
-
-        year_aggregated_output_folder_path = (
-            processed_data_folder_path
-            / Path(f"{year}")
-            / Path(f"{input_data_name}")
-            / Path("year_aggregated_data")
-        )
-
-        year_tiles_data_paths = []
-
-        for tile_name, tile_months_data in tiles_months_data.items():
-            if input_data_values["aggregate_by"] == "average":
-                tile_year_data_path = (
-                    await year_data_aggregator.aggregate_files_by_average(
-                        input_datasets_paths=tile_months_data,
-                        output_folder_path=year_aggregated_output_folder_path,
-                    )
-                )
-            elif input_data_values["aggregate_by"] == "max":
-                tile_year_data_path = await year_data_aggregator.aggregate_files_by_max(
-                    input_datasets_paths=tile_months_data,
-                    output_folder_path=year_aggregated_output_folder_path,
-                )
-            else:
-                raise ValueError(
-                    f"Unknown aggregation method: {input_data_values['aggregate_by']}"
-                )
-
-            year_tiles_data_paths.append(tile_year_data_path)
-
-        logger.info("Yearly data aggregation done!")
-        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
-
-        return {input_data_name: year_tiles_data_paths}
-
-    async def process_static_data(
-        self,
-        processed_data_folder_path: Path,
-        input_data_yearly_data_index: dict,
-        big_tiles_boundaries: gpd.GeoDataFrame,
-        static_input_data: list,
-        resolution_config: dict,
-        projections_config: dict,
-    ) -> dict:
-        logger.info(f"Processing {len(static_input_data)} static input data...")
-
-        for input_data_name, input_data_values in static_input_data:
-            layer_name = input_data_values["layer"]
-
-            static_input_data_folder_name = "static_data"
-
-            raw_tiles_folder = (
-                Path(self.input_folder_path)
-                / Path(static_input_data_folder_name)
-                / Path(f"{input_data_name}")
-            )
-
-            tiling_output_folder_path = (
-                processed_data_folder_path
-                / Path(static_input_data_folder_name)
-                / Path(f"{input_data_name}")
-                / Path("tiles")
-            )
-
-            logger.info(f"Processing {input_data_name}...")
-
-            tiles = TilesPreprocessor(
-                raw_tiles_folder=raw_tiles_folder,
-                tile_size_in_pixels=resolution_config["tile_size_in_pixels"],
-                pixel_size_in_meters=resolution_config["pixel_size_in_meters"],
-                output_folder=tiling_output_folder_path,
-                big_tiles_boundaries=big_tiles_boundaries,
-                input_format=self.input_format,
-                output_format=self.output_format,
-                layer_name=layer_name,
-                source_srid=projections_config["source_srid"],
-                target_srid=projections_config["target_srid"],
-                resample_algorithm_continuous=resolution_config[
-                    "resample_algorithm_continuous"
-                ],
-                resample_algorithm_categorical=resolution_config[
-                    "resample_algorithm_categorical"
-                ],
-            )
-
-            logger.info(f"{input_data_name}: Preprocessing tiles...")
-            tiles_paths = await tiles.preprocess_tiles(
-                data_type=input_data_values["data_type"]
-            )
-            logger.info(f"{input_data_name}: Generated {len(tiles_paths)} tiles!")
-
-            for year in input_data_yearly_data_index.keys():
-                input_data_yearly_data_index[year][input_data_name] = tiles_paths
-
-        return input_data_yearly_data_index
-
-    def get_tiles_names(self, input_data_yearly_data_index: dict) -> list:
-        tiles_names = []
-        for _, source_yearly_data in input_data_yearly_data_index.items():
-            for _, input_data_data_paths in source_yearly_data.items():
-                for input_data_data_path in input_data_data_paths:
-                    tiles_names.append(input_data_data_path.stem)
-        return tiles_names
-
-    def stack_data(
-        self,
-        input_data_yearly_data_index: dict,
-        tiles_names: list,
-        dataset_folder_path: Path,
-        periods_config: dict,
-        resolution_config: dict,
-        dynamic_input_data: list,
-        static_input_data: list,
+        output_folder_path: Path,
         target_years_ranges: list,
+        input_data_index: dict,
+        big_tiles_boundaries: gpd.GeoDataFrame,
     ):
-        logger.info("Stacking data...")
-
         for target_years_range in target_years_ranges:
-            self.stack_tiles_data(
-                input_data_yearly_data_index,
-                tiles_names,
-                dataset_folder_path,
-                periods_config,
-                resolution_config,
-                dynamic_input_data,
-                static_input_data,
-                target_years_range,
+            logger.info(f"Stacking data for target years range {target_years_range}...")
+            target_years_range_output_folder = (
+                output_folder_path
+                / Path("input_data")
+                / Path(f"{target_years_range[0]}_{target_years_range[-1]}")
             )
+            target_years_range_output_folder.mkdir(parents=True, exist_ok=True)
 
-    def stack_tiles_data(
-        self,
-        input_data_yearly_data_index: dict,
-        tiles_names: list,
-        dataset_folder_path: Path,
-        periods_config: dict,
-        resolution_config: dict,
-        dynamic_input_data: list,
-        static_input_data: list,
-        target_years_range: range,
-    ):
-        logger.info(
-            f"Stacking data for target years range: [{target_years_range[0]}, {target_years_range[-1]}]..."
-        )
-
-        stacked_input_data_folder_path = (
-            dataset_folder_path
-            / Path("input_data")
-            / Path(f"{target_years_range[0]}_{target_years_range[-1]}")
-        )
-
-        stacked_input_data_folder_path.mkdir(parents=True, exist_ok=True)
-
-        logger.info(
-            f"Stacked input data folder path: {str(stacked_input_data_folder_path)}"
-        )
-
-        gc.collect()
-
-        for tile_name in tiles_names:
-            self.stack_tile_data(
-                dynamic_input_data,
-                static_input_data,
-                input_data_yearly_data_index,
-                tile_name,
-                periods_config,
-                resolution_config,
-                target_years_range,
-                stacked_input_data_folder_path,
-            )
-
-    def stack_tile_data(
-        self,
-        dynamic_input_data: list,
-        static_input_data: list,
-        input_data_yearly_data_index: dict,
-        tile_name: str,
-        periods_config: dict,
-        resolution_config: dict,
-        target_years_range: range,
-        stacked_input_data_folder_path: Path,
-    ):
-        number_of_bands = 0
-
-        dynamic_data_to_stack = []
-
-        for dynamic_input_data_name, dynamic_input_data_values in dynamic_input_data:
-            is_affected_by_fires = dynamic_input_data_values["is_affected_by_fires"]
-            dynamic_input_data_years_range = (
-                self.get_dynamic_input_data_years_range_for_target_years_range(
-                    target_years_range, periods_config, is_affected_by_fires
+            for tile_relative_index in range(len(big_tiles_boundaries)):
+                tile_output_file = (
+                    target_years_range_output_folder
+                    / f"tile_{tile_relative_index}{get_extension('gtiff')}"
                 )
-            )
-            number_of_bands += len(dynamic_input_data_years_range)
-            layer = dynamic_input_data_values["layer"]
-            dynamic_data_to_stack.append(
-                (dynamic_input_data_name, dynamic_input_data_years_range, layer)
-            )
 
-        for static_input_data_name, _ in static_input_data:
-            number_of_bands += 1
+                files_to_stack = []
 
-        x_size = resolution_config["tile_size_in_pixels"]
-        y_size = resolution_config["tile_size_in_pixels"]
-        data_type = gdal.GDT_Float32
+                for data_name, years_index in input_data_index.items():
+                    is_affected_by_fires = self.get_is_affected_by_fires(data_name)
 
-        driver = gdal.GetDriverByName(self.output_format)
-        output_extension = get_extension(self.output_format)
-        stacked_tile_data_output_path = stacked_input_data_folder_path / Path(
-            f"{tile_name}{output_extension}"
-        )
-        stacked_tile_ds = driver.Create(
-            stacked_tile_data_output_path, x_size, y_size, number_of_bands, data_type
-        )
-
-        band_index = 1
-
-        stacked_ds_georeferenced = False
-
-        for (
-            dynamic_input_data_name,
-            dynamic_input_data_years_range,
-            dynamic_input_data_layer,
-        ) in dynamic_data_to_stack:
-            for year in dynamic_input_data_years_range:
-                year_data_tile_paths = input_data_yearly_data_index[year][
-                    dynamic_input_data_name
-                ]
-
-                output_band = stacked_tile_ds.GetRasterBand(band_index)
-
-                for year_data_tile_path in year_data_tile_paths:
-                    if year_data_tile_path.stem == tile_name:
-                        input_ds = open_dataset(
-                            year_data_tile_path,
-                            dynamic_input_data_layer,
-                            read_only=True,
-                        )
-
-                        if not stacked_ds_georeferenced:
-                            stacked_tile_ds.SetGeoTransform(input_ds.GetGeoTransform())
-                            stacked_tile_ds.SetProjection(input_ds.GetProjection())
-                            stacked_ds_georeferenced = True
-
-                        input_band = input_ds.GetRasterBand(1)
-                        input_band_data = input_band.ReadAsArray()
-                        output_band.SetDescription(f"{dynamic_input_data_name}_{year}")
-                        input_band_no_data_value = input_band.GetNoDataValue()
-                        input_band_data = (
-                            self.no_data_value_preprocessor.replace_no_data_values(
-                                input_band_data, input_band_no_data_value
-                            )
-                        )
-                        output_band.SetNoDataValue(
-                            self.no_data_value_preprocessor.get_no_data_fill_value()
-                        )
-                        output_band.WriteArray(input_band_data)
-                        stacked_tile_ds.FlushCache()
-                        break
-
-                band_index += 1
-
-        for static_input_data_name, static_input_data_values in static_input_data:
-            output_band = stacked_tile_ds.GetRasterBand(band_index)
-            static_data_tile_paths = input_data_yearly_data_index[
-                target_years_range[0]
-            ][static_input_data_name]
-
-            for tile_path in static_data_tile_paths:
-                if tile_path.stem == tile_name:
-                    layer = static_input_data_values["layer"]
-                    input_ds = open_dataset(tile_path, layer, read_only=True)
-
-                    if not stacked_ds_georeferenced:
-                        stacked_tile_ds.SetGeoTransform(input_ds.GetGeoTransform())
-                        stacked_tile_ds.SetProjection(input_ds.GetProjection())
-                        stacked_ds_georeferenced = True
-
-                    input_band = input_ds.GetRasterBand(1)
-                    input_band_data = input_band.ReadAsArray()
-                    output_band.SetDescription(f"{static_input_data_name}")
-                    input_band_no_data_value = input_band.GetNoDataValue()
-                    input_band_data = (
-                        self.no_data_value_preprocessor.replace_no_data_values(
-                            input_band_data, input_band_no_data_value
+                    data_years_range = (
+                        self.get_dynamic_input_data_years_range_for_target_years_range(
+                            target_years_range, is_affected_by_fires
                         )
                     )
-                    output_band.SetNoDataValue(
-                        self.no_data_value_preprocessor.get_no_data_fill_value()
-                    )
-                    output_band.WriteArray(input_band_data)
-                    stacked_tile_ds.FlushCache()
-                    break
 
-            band_index += 1
+                    for year in data_years_range:
+                        data_year_tiles_paths = sorted(list(years_index[year]))
+                        files_to_stack.append(
+                            str(data_year_tiles_paths[tile_relative_index])
+                        )
 
-        del stacked_tile_ds
+                self.stack_files(files_to_stack, tile_output_file)
+
+    def stack_files(self, files_to_stack: list, output_file: Path):
+        vrt_file = output_file.with_suffix(".vrt")
+
+        gdalbuildvrt_cmd = f"gdalbuildvrt -separate {str(vrt_file)} " + " ".join(
+            files_to_stack
+        )
+        self.run_command(gdalbuildvrt_cmd)
+
+        gdal_translate_cmd = (
+            f"gdal_translate -of GTiff {str(vrt_file)} {str(output_file)}"
+        )
+        self.run_command(gdal_translate_cmd)
+
+        vrt_file.unlink()
+
+    def get_is_affected_by_fires(self, data_name: str) -> bool:
+        dynamic_data = self.config["input_data"].get("dynamic", {})
+        for data_name, data_info in dynamic_data.items():
+            if data_name == data_name:
+                return data_info.get("is_affected_by_fires", False)
+
+        static_data = self.config["input_data"].get("static", {})
+        for data_name, data_info in static_data.items():
+            if data_name == data_name:
+                return False
+
+        raise ValueError(f"Data name {data_name} not found in input data!")
 
     def get_dynamic_input_data_years_range_for_target_years_range(
         self,
         target_years_range: range,
-        periods_config: dict,
         is_affected_by_fires: bool,
     ) -> range:
         if is_affected_by_fires:
             year_end_inclusive = target_years_range[0] - 1
             year_start_inclusive = (
                 year_end_inclusive
-                - periods_config["input_data_affected_by_fires_period_length_in_years"]
+                - self.config["periods"][
+                    "input_data_affected_by_fires_period_length_in_years"
+                ]
                 + 1
             )
         else:
@@ -817,126 +275,403 @@ class DatasetGenerator:
 
         return range(year_start_inclusive, year_end_inclusive + 1)
 
-    def log_input_data_processing_results(
-        self, dataset_folder_path: Path, sources_yearly_data_index: dict
-    ):
-        if self.debug:
-            logs_folder = dataset_folder_path / Path("logs")
-            logs_folder.mkdir(parents=True, exist_ok=True)
+    def process_dynamic_input_data(
+        self, output_folder_path: Path, big_tiles_boundaries: gpd.GeoDataFrame
+    ) -> dict:
+        dynamic_data = self.config["input_data"].get("dynamic", {})
+        args = [
+            (output_folder_path, data_name, data_info, big_tiles_boundaries)
+            for data_name, data_info in dynamic_data.items()
+        ]
 
-            logger.info("Saving sources yearly data index logs for debugging...")
+        input_data_years_indexes = []
+        for arg in args:
+            input_data_years_indexes.append(self.process_dynamic_input_data_years(*arg))
 
-            serializable_sources_yearly_data_index = {
-                year: {
-                    source_name: [str(tile_path) for tile_path in tile_paths]
-                    for source_name, tile_paths in source_yearly_data.items()
-                }
-                for year, source_yearly_data in sources_yearly_data_index.items()
-            }
-            with open(logs_folder / "sources_yearly_data_index.json", "w") as f:
-                json.dump(serializable_sources_yearly_data_index, f, indent=4)
+        input_data_index = {}
+        for input_data_years_index in input_data_years_indexes:
+            for data_name, years_index in input_data_years_index.items():
+                input_data_index[data_name] = years_index
 
-    async def generate_targets(
+        return input_data_index
+
+    def process_dynamic_input_data_years(
         self,
-        dataset_folder_path: Path,
-        tmp_path: Path,
-        target_years_ranges: list,
+        output_folder_path: Path,
+        data_name: str,
+        data_info: dict,
         big_tiles_boundaries: gpd.GeoDataFrame,
-        resolution_config: dict,
-        projections_config: dict,
+    ) -> dict:
+        with logger.contextualize(data_name=data_name):
+            is_affected_by_fires = data_info.get("is_affected_by_fires", False)
+
+            data_years_index = {data_name: {}}
+
+            for year in self.get_dynamic_input_data_total_years_extent(
+                is_affected_by_fires
+            ):
+                with logger.contextualize(year=year):
+                    logger.info(f"Processing year {year}...")
+                    months_files_paths = []
+                    for month in self.get_months_range():
+                        with logger.contextualize(month=month):
+                            data_input_folder = (
+                                self.input_folder_path
+                                / Path(f"{year}")
+                                / Path(f"{month}")
+                                / Path(f"{data_name}")
+                            )
+                            month_output_folder = (
+                                output_folder_path
+                                / Path(f"{year}")
+                                / Path(f"{month}")
+                                / Path(f"{data_name}")
+                            )
+
+                            logger.info("Merging files...")
+                            merged_file_path = self.merge_spatially(
+                                data_input_folder,
+                                month_output_folder,
+                                data_info,
+                            )
+
+                            logger.info("Aggregating bands for month...")
+                            month_aggregated_file_path = self.aggregate_file(
+                                merged_file_path, month_output_folder, data_info
+                            )
+                            months_files_paths.append(month_aggregated_file_path)
+
+                    year_output_folder = (
+                        output_folder_path / Path(f"{year}") / data_name
+                    )
+                    year_output_folder.mkdir(parents=True, exist_ok=True)
+
+                    logger.info("Aggregating data for year...")
+                    yearly_aggregated_file_path = self.aggregate_files(
+                        months_files_paths, year_output_folder, data_info
+                    )
+
+                    logger.info("Resizing and reprojecting...")
+                    data_type = data_info.get("data_type", None)
+                    resized_file_path = self.resize_and_reproject(
+                        yearly_aggregated_file_path, year_output_folder, data_type
+                    )
+
+                    logger.info("Creating tiles...")
+                    tiles_files_paths = self.create_tiles(
+                        resized_file_path, year_output_folder, big_tiles_boundaries
+                    )
+                    data_years_index[data_name][year] = tiles_files_paths
+
+                    logger.info(f"Finished processing year {year}!")
+
+        return data_years_index
+
+    def process_static_input_data(
+        self,
+        output_folder_path: Path,
+        big_tiles_boundaries: gpd.GeoDataFrame,
+        input_data_index: dict,
     ):
-        logger.info("Generating targets...")
+        static_data = self.config["input_data"].get("static", {})
+        args = [
+            (output_folder_path, data_name, data_info, big_tiles_boundaries)
+            for data_name, data_info in static_data.items()
+        ]
 
-        fire_data_source = NbacFireDataSource(Path(self.input_folder_path))
+        inputs_data_files_paths = []
+        for arg in args:
+            inputs_data_files_paths.append(self.process_static_input_data_layer(*arg))
 
-        tmp_target_folder_path = tmp_path / Path("targets")
+        all_years = set()
+        for year_data in input_data_index.values():
+            for year in year_data.keys():
+                all_years.add(year)
 
-        target = FireOccurrenceTarget(
-            fire_data_source=fire_data_source,
-            boundary=self.canada_boundary,
-            target_pixel_size_in_meters=resolution_config["pixel_size_in_meters"],
-            target_srid=projections_config["target_srid"],
-            output_folder_path=tmp_target_folder_path,
-            output_format=self.output_format,
-            max_io_concurrency=self.max_io_concurrency,
-            max_cpu_concurrency=self.max_cpu_concurrency,
+        for input_data_files_paths in inputs_data_files_paths:
+            for data_name, files_paths in input_data_files_paths.items():
+                for year in all_years:
+                    input_data_index[data_name][year] = files_paths
+
+    def process_static_input_data_layer(
+        self,
+        output_folder_path: Path,
+        data_name: str,
+        data_info: dict,
+        big_tiles_boundaries: gpd.GeoDataFrame,
+    ):
+        with logger.contextualize(data_name=data_name):
+
+            static_input_data_folder_name = "static_data"
+
+            input_folder_path = (
+                Path(self.input_folder_path)
+                / Path(static_input_data_folder_name)
+                / Path(f"{data_name}")
+            )
+
+            static_output_folder_path = (
+                output_folder_path
+                / Path(static_input_data_folder_name)
+                / Path(data_name)
+            )
+            static_output_folder_path.mkdir(parents=True, exist_ok=True)
+
+            logger.info("Merging files...")
+            merged_file_path = self.merge_spatially(
+                input_folder_path,
+                static_output_folder_path,
+                data_info,
+            )
+
+            logger.info("Resizing and reprojecting...")
+            data_type = "categorical"
+            resized_file_path = self.resize_and_reproject(
+                merged_file_path, static_output_folder_path, data_type
+            )
+
+            logger.info("Creating tiles...")
+            tiles_files_paths = self.create_tiles(
+                resized_file_path, static_output_folder_path, big_tiles_boundaries
+            )
+
+        return {data_name: tiles_files_paths}
+
+    def create_tiles(
+        self,
+        input_file: Path,
+        output_folder_path: Path,
+        big_tiles_boundaries: gpd.GeoDataFrame,
+    ) -> list:
+        tiles_output_folder = output_folder_path / "tiles"
+        tiles_output_folder.mkdir(parents=True, exist_ok=True)
+
+        tiles_paths = []
+
+        for tile_index, (_, tile) in enumerate(big_tiles_boundaries.iterrows()):
+            tile_output_file = (
+                tiles_output_folder / f"tile_{tile_index}{get_extension('gtiff')}"
+            )
+            bounds = tile["geometry"].bounds
+            minx, miny, maxx, maxy = bounds
+            self.run_command(
+                f"gdalwarp -multi -te {minx} {miny} {maxx} {maxy} {str(input_file)} {str(tile_output_file)}"
+            )
+            tiles_paths.append(tile_output_file)
+
+        return tiles_paths
+
+    def resize_and_reproject(
+        self, input_file: Path, output_folder_path: Path, data_type: str
+    ):
+        output_file_path = (
+            output_folder_path
+            / Path("resized_reprojected")
+            / Path(f"resized_reprojected{get_extension('gtiff')}")
+        )
+        output_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        target_srid = self.config["projections"]["target_srid"]
+
+        pixel_size_in_meters = self.config["resolution"]["pixel_size_in_meters"]
+
+        resampling_algorithm = self.get_resampling_algorithm(data_type)
+
+        self.run_command(
+            f"gdalwarp -multi -r {resampling_algorithm} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -of GTiff {str(input_file)} {str(output_file_path)}"
         )
 
-        target_ranges_combined_raster = await target.generate_target_for_years_ranges(
-            target_years_ranges
+        return output_file_path
+
+    def get_resampling_algorithm(self, data_type: str) -> str:
+        if data_type == "continuous":
+            resample_algorithm = self.config["resolution"][
+                "resample_algorithm_continuous"
+            ]
+        elif data_type == "categorical":
+            resample_algorithm = self.config["resolution"][
+                "resample_algorithm_categorical"
+            ]
+        else:
+            raise ValueError(f"Unknown data type: {data_type}")
+
+        return resample_algorithm
+
+    def aggregate_file(
+        self, input_file: Path, output_folder_path: Path, data_info: dict
+    ) -> Path:
+        output_file_path = (
+            output_folder_path
+            / Path("aggregated")
+            / Path(f"aggregated{get_extension('GTiff')}")
         )
 
-        logger.info("Generating tiles for targets...")
+        output_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        dataset_targets_output_folder_path = dataset_folder_path / Path("target")
-        dataset_targets_output_folder_path.mkdir(parents=True, exist_ok=True)
-
-        for years_range, combined_raster_path in target_ranges_combined_raster.items():
-            tiles_preprocessing_output_folder = (
-                tmp_target_folder_path / f"{years_range[0]}_{years_range[-1]}/"
-            )
-
-            tiles_preprocessor = TilesPreprocessor(
-                raw_tiles_folder=combined_raster_path.parent,
-                tile_size_in_pixels=resolution_config["tile_size_in_pixels"],
-                pixel_size_in_meters=resolution_config["pixel_size_in_meters"],
-                output_folder=tiles_preprocessing_output_folder,
-                big_tiles_boundaries=big_tiles_boundaries,
-                input_format=self.output_format,
-                output_format=self.output_format,
-                layer_name="",
-                source_srid=projections_config["target_srid"],
-                target_srid=projections_config["target_srid"],
-                resample_algorithm_continuous=resolution_config[
-                    "resample_algorithm_continuous"
-                ],
-                resample_algorithm_categorical=resolution_config[
-                    "resample_algorithm_categorical"
-                ],
-            )
-
-            logger.info(f"Preprocessing tiles for target years range: {years_range}...")
-            tiles_paths = await tiles_preprocessor.preprocess_tiles(
-                data_type="categorical"
-            )
-            logger.info(
-                f"Generated {len(tiles_paths)} tiles for target years range: {years_range}!"
-            )
-
-            tiles_folder_path = tiles_paths[0].parent
-
-            years_range_output_folder_path = dataset_targets_output_folder_path / Path(
-                f"{years_range[0]}_{years_range[-1]}"
-            )
-            years_range_output_folder_path.mkdir(parents=True, exist_ok=True)
-
-            logger.info(
-                f"Moving preprocessed tiles to final destination for target years range: {years_range}..."
-            )
-            shutil.move(tiles_folder_path, years_range_output_folder_path)
-
-        logger.info("Generating targets DONE !")
-        if self.debug:
-            logs_folder = dataset_folder_path / Path("logs")
-            logs_folder.mkdir(parents=True, exist_ok=True)
-            logger.info("Saving target ranges combined raster logs for debugging...")
-            serializable_target_ranges_combined_raster = {
-                str(years_range): str(combined_raster_path)
-                for years_range, combined_raster_path in target_ranges_combined_raster.items()
-            }
-            with open(logs_folder / "target_ranges_combined_raster.json", "w") as f:
-                json.dump(serializable_target_ranges_combined_raster, f, indent=4)
-
-    def cleanup_tmp_folder(self, tmp_folder_path: Path):
-        if not self.debug:
-            logger.info("Cleaning up tmp folder...")
-            shutil.rmtree(tmp_folder_path)
+        if data_info.get("aggregate_by", None) == "average":
+            operation = np.mean
+        elif data_info.get("aggregate_by", None) == "max":
+            operation = np.maximum
         else:
-            logger.info("Not cleaning up tmp folder since debug mode enabled!")
+            raise ValueError(
+                f"Unknown aggregation strategy {data_info.get('aggregate_by', None)}!"
+            )
 
-    def cleanup_dataset_folder(self, dataset_folder_path: Path):
-        if not self.debug:
-            logger.info("Cleaning up dataset folder...")
-            shutil.rmtree(dataset_folder_path)
+        input_dataset = gdal.Open(str(input_file), gdal.GA_ReadOnly)
+        xsize = input_dataset.RasterXSize
+        ysize = input_dataset.RasterYSize
+        block_size = 2048
+
+        output_driver = gdal.GetDriverByName("GTiff")
+        output_dataset = output_driver.Create(
+            str(output_file_path.resolve()),
+            xsize=xsize,
+            ysize=ysize,
+            bands=1,
+            eType=gdal.GDT_Float32,
+        )
+        output_dataset.SetGeoTransform(input_dataset.GetGeoTransform())
+        output_dataset.SetProjection(input_dataset.GetProjection())
+        output_band = output_dataset.GetRasterBand(1)
+        output_band.SetNoDataValue(input_dataset.GetRasterBand(1).GetNoDataValue())
+
+        for y in range(0, ysize, block_size):
+            for x in range(0, xsize, block_size):
+                x_block_size = min(block_size, xsize - x)
+                y_block_size = min(block_size, ysize - y)
+
+                aggregated_data = np.zeros(
+                    (y_block_size, x_block_size), dtype=np.float32
+                )
+
+                for i in range(1, input_dataset.RasterCount + 1):
+                    band = input_dataset.GetRasterBand(i)
+                    data = band.ReadAsArray(x, y, x_block_size, y_block_size)
+                    aggregated_data = operation([aggregated_data, data], axis=0)
+
+                output_band.WriteArray(aggregated_data, x, y)
+
+        output_dataset.FlushCache()
+
+        del input_dataset
+        del output_dataset
+
+        return output_file_path
+
+    def aggregate_files(
+        self, input_files: list, output_folder_path: Path, data_info: dict
+    ) -> Path:
+        output_file_path = (
+            output_folder_path
+            / Path("aggregated")
+            / Path(f"aggregated{get_extension('GTiff')}")
+        )
+
+        output_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if data_info.get("aggregate_by", None) == "average":
+            operation = np.mean
+        elif data_info.get("aggregate_by", None) == "max":
+            operation = np.maximum
         else:
-            logger.info("Not cleaning up dataset folder since debug mode enabled!")
+            raise ValueError(
+                f"Unknown aggregation strategy {data_info.get('aggregate_by', None)}!"
+            )
+
+        first_dataset = gdal.Open(str(input_files[0]), gdal.GA_ReadOnly)
+        xsize = first_dataset.RasterXSize
+        ysize = first_dataset.RasterYSize
+        block_size = 2048
+
+        output_driver = gdal.GetDriverByName("GTiff")
+        output_dataset = output_driver.Create(
+            str(output_file_path.resolve()),
+            xsize=xsize,
+            ysize=ysize,
+            bands=1,
+            eType=gdal.GDT_Float32,
+        )
+        output_dataset.SetGeoTransform(first_dataset.GetGeoTransform())
+        output_dataset.SetProjection(first_dataset.GetProjection())
+        output_band = output_dataset.GetRasterBand(1)
+        output_band.SetNoDataValue(first_dataset.GetRasterBand(1).GetNoDataValue())
+
+        for y in range(0, ysize, block_size):
+            for x in range(0, xsize, block_size):
+                x_block_size = min(block_size, xsize - x)
+                y_block_size = min(block_size, ysize - y)
+
+                aggregated_data = np.zeros(
+                    (y_block_size, x_block_size), dtype=np.float32
+                )
+
+                for file in input_files:
+                    dataset = gdal.Open(str(file), gdal.GA_ReadOnly)
+                    band = dataset.GetRasterBand(1)
+                    data = band.ReadAsArray(x, y, x_block_size, y_block_size)
+                    aggregated_data = operation([aggregated_data, data], axis=0)
+                    del dataset
+
+                output_band.WriteArray(aggregated_data, x, y)
+
+        output_dataset.FlushCache()
+
+        del first_dataset
+        del output_dataset
+
+        return output_file_path
+
+    def merge_spatially(
+        self, input_folder: Path, month_output_folder: Path, data_info: dict
+    ) -> Path:
+        netcdf_layer = data_info.get("netcdf_layer", None)
+
+        input_files = " ".join(
+            [
+                get_formatted_file_path(file, netcdf_layer)
+                for file in input_folder.glob(f"*{get_extension('netcdf')}")
+            ]
+        )
+        output_file = (
+            month_output_folder / Path("merged") / f"merged{get_extension('gtiff')}"
+        )
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        self.run_command(
+            f"gdalwarp -multi -of GTiff -overwrite {input_files} {str(output_file)}"
+        )
+
+        return output_file
+
+    def get_months_range(self) -> range:
+        return range(
+            self.config["periods"]["month_start_inclusive"],
+            self.config["periods"]["month_end_inclusive"] + 1,
+        )
+
+    def get_dynamic_input_data_total_years_extent(
+        self, is_affected_by_fires: bool
+    ) -> range:
+        if is_affected_by_fires:
+            year_start_inclusive = (
+                self.config["periods"]["target_year_start_inclusive"]
+                - self.config["periods"][
+                    "input_data_affected_by_fires_period_length_in_years"
+                ]
+            )
+            year_end_inclusive = (
+                self.config["periods"]["target_year_end_inclusive"]
+                - self.config["periods"]["target_period_length_in_years"]
+            )
+        else:
+            year_start_inclusive = self.config["periods"]["target_year_start_inclusive"]
+            year_end_inclusive = self.config["periods"]["target_year_end_inclusive"]
+
+        return range(year_start_inclusive, year_end_inclusive + 1)
+
+    def run_command(self, command: str):
+        try:
+            subprocess.run(command, check=True, shell=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Command failed: {e}")
+            raise e
