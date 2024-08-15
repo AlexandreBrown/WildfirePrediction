@@ -15,58 +15,58 @@ Dynamic data is data that changes with time. This data is updated on a daily/wee
 #### Vegetation
 - [MODIS/Terra Vegetation Indices 16-Day L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod13q1v061/)
   - Temporal Extent : 2000-02-18 to Present
-  - Features : 
+  - Layers Used : 
     - Normalized Difference Vegetation Index (NDVI)
     - Enhanced Vegetation Index (EVI)
 - [MODIS/Terra Vegetation Continuous Fields Yearly L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod44bv061/)
   - Temporal Extent : 2000-03-05 to Present  
-  - Features : 
+  - Layers Used : 
     - Percent Tree Cover  
     - Percent Non-Tree Cover
     - Percent Non Vegetated
 - [MODIS/Terra Leaf Area Index/FPAR 8-Day L4 Global 500 m SIN Grid](https://lpdaac.usgs.gov/products/mod15a2hv061/)
   - Temporal Extent : 2000-02-18 to Present
-  - Features : 
+  - Layers Used : 
     - Leaf Area Index (LAI) 
 
 #### Weather
 - [ERA5 Reanalysis 100m U component of wind](https://codes.ecmwf.int/grib/param-db/228246)
   - Temporal Extent : 1940-01-01 to Present
-  - Features : 
+  - Layers Used : 
     - 100m U component of wind
 - [ERA5 Reanalysis 100m V component of wind](https://codes.ecmwf.int/grib/param-db/132)
   - Temporal Extent : 1940-01-01 to Present
-  - Features : 
+  - Layers Used : 
     - 100m V component of wind
 - [ERA5 Reanalysis 2m Temperature](https://codes.ecmwf.int/grib/param-db/167)
   - Temporal Extent : 1940-01-01 to Present
-  - Features : 
+  - Layers Used : 
     - 2m Temperature
 - [ERA5 Reanalysis Potential evaporation](https://codes.ecmwf.int/grib/param-db/228251)
   - Temporal Extent : 1940-01-01 to Present
-  - Features : 
+  - Layers Used : 
     - Potential evaporation
 - [ERA5 Reanalysis Surface net solar radiation](https://codes.ecmwf.int/grib/param-db/176)
   - Temporal Extent : 1940-01-01 to Present
-  - Features : 
+  - Layers Used : 
     - Surface net solar radiation
 - [ERA5 Reanalysis Surface runoff](https://codes.ecmwf.int/grib/param-db/8)
   - Temporal Extent : 1940-01-01 to Present
-  - Features : 
+  - Layers Used : 
     - Surface runoff
 - [ERA5 Reanalysis Total precipitation](https://codes.ecmwf.int/grib/param-db/228)
   - Temporal Extent : 1940-01-01 to Present
-  - Features : 
+  - Layers Used : 
     - Total precipitation
 
 #### Thematic
 - [MODIS/Terra Land Water Mask Derived from MODIS and SRTM L3 Yearly Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod44wv061/)
   - Temporal Extent : 2000-01-01 to Present
-  - Features : 
+  - Layers Used : 
     - Water Mask
 - [MODIS/Terra Thermal Anomalies/Fire 8-Day L3 Global 1 km SIN Grid](https://lpdaac.usgs.gov/products/mod14a2v061/)
   - Temporal Extent : 2000-02-18 to Present
-  - Features : 
+  - Layers Used : 
     - Fire Mask  
 
 ### Static  

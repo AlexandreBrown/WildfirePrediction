@@ -33,16 +33,17 @@ class DatasetGenerator:
         dataset_folder_path = self.create_dataset_folder_path()
 
         try:
+            tmp_folder_path = self.create_dataset_tmp_folder_path(dataset_folder_path)
+
             logger.info("Loading boundaries...")
             self.canada_boundary.load(provinces=self.config["boundaries"]["provinces"])
+            self.canada_boundary.save(tmp_folder_path)
 
             logger.info("Generating big tiles boundaries...")
             big_tiles_boundaries = self.grid.get_tiles_boundaries(
                 self.canada_boundary.boundary
             )
             logger.info(f"Generated {len(big_tiles_boundaries)} big tiles boundaries!")
-
-            tmp_folder_path = self.create_dataset_tmp_folder_path(dataset_folder_path)
 
             target_years_ranges = self.generate_target_years_ranges()
 
@@ -100,13 +101,17 @@ class DatasetGenerator:
         for years_range, combined_raster_path in target_ranges_combined_raster.items():
             with logger.contextualize(years_range=str(years_range)):
                 tiles_preprocessing_output_folder = (
-                    tmp_target_folder_path / f"tiles_{years_range[0]}_{years_range[-1]}/"
+                    tmp_target_folder_path
+                    / f"tiles_{years_range[0]}_{years_range[-1]}/"
                 )
 
                 logger.info("Resizing and reprojecting...")
                 data_type = "categorical"
                 resized_file_path = self.resize_and_reproject(
-                    combined_raster_path, tiles_preprocessing_output_folder, data_type
+                    combined_raster_path,
+                    tiles_preprocessing_output_folder,
+                    data_type,
+                    source_srid=self.config["projections"]["target_srid"],
                 )
 
                 logger.info("Creating tiles...")
@@ -119,7 +124,7 @@ class DatasetGenerator:
                     resized_file_path,
                     years_range_output_folder_path,
                     big_tiles_boundaries,
-                    create_child_folder=False
+                    create_child_folder=False,
                 )
 
         logger.info("Generating targets DONE !")
@@ -183,7 +188,6 @@ class DatasetGenerator:
             dataset_folder_path,
             target_years_ranges,
             input_data_index,
-            big_tiles_boundaries,
         )
         return input_data_index
 
@@ -192,16 +196,20 @@ class DatasetGenerator:
         output_folder_path: Path,
         target_years_ranges: list,
         input_data_index: dict,
-        big_tiles_boundaries: gpd.GeoDataFrame,
     ):
         with mp.Pool(processes=self.max_cpu_concurrency) as pool:
             args = [
-                (output_folder_path, target_years_range, input_data_index, big_tiles_boundaries)
+                (output_folder_path, target_years_range, input_data_index)
                 for target_years_range in target_years_ranges
             ]
             pool.starmap(self.stack_input_data_for_years_range, args)
-            
-    def stack_input_data_for_years_range(self, output_folder_path: Path, target_years_range: range, input_data_index: dict, big_tiles_boundaries: gpd.GeoDataFrame):
+
+    def stack_input_data_for_years_range(
+        self,
+        output_folder_path: Path,
+        target_years_range: range,
+        input_data_index: dict,
+    ):
         logger.info(f"Stacking data for target years range {target_years_range}...")
         target_years_range_output_folder = (
             output_folder_path
@@ -210,7 +218,12 @@ class DatasetGenerator:
         )
         target_years_range_output_folder.mkdir(parents=True, exist_ok=True)
 
-        for tile_relative_index in range(len(big_tiles_boundaries)):
+        tiles = [
+            file_path.stem
+            for file_path in list(list(input_data_index.values())[0].values())[0]
+        ]
+
+        for tile_name in tiles:
 
             files_to_stack = []
 
@@ -224,16 +237,21 @@ class DatasetGenerator:
                 )
 
                 for year in data_years_range:
-                    data_year_tiles_paths = sorted(list(years_index[year]))
-                    files_to_stack.append(
-                        str(data_year_tiles_paths[tile_relative_index])
+                    data_year_tiles_paths = list(years_index[year])
+                    data_year_tile_path = next(
+                        filter(
+                            lambda path: path.stem == tile_name, data_year_tiles_paths
+                        )
                     )
+                    files_to_stack.append(str(data_year_tile_path))
 
-            self.stack_files(files_to_stack, target_years_range_output_folder, tile_relative_index)
+            self.stack_files(
+                files_to_stack, target_years_range_output_folder, tile_name
+            )
 
-    def stack_files(self, files_to_stack: list, output_folder: Path, tile_relative_index: int):
-        output_file  = output_folder / f"tile_{tile_relative_index}{get_extension('gtiff')}"
-            
+    def stack_files(self, files_to_stack: list, output_folder: Path, tile_name: str):
+        output_file = output_folder / f"{tile_name}{get_extension('gtiff')}"
+
         vrt_file = output_file.with_suffix(".vrt")
 
         gdalbuildvrt_cmd = f"gdalbuildvrt -separate {str(vrt_file)} " + " ".join(
@@ -241,9 +259,7 @@ class DatasetGenerator:
         )
         self.run_command(gdalbuildvrt_cmd)
 
-        gdal_translate_cmd = (
-            f"gdal_translate -strict -of GTiff {str(vrt_file)} {str(output_file)}"
-        )
+        gdal_translate_cmd = f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)}"
         self.run_command(gdal_translate_cmd)
 
         vrt_file.unlink()
@@ -276,8 +292,8 @@ class DatasetGenerator:
                 + 1
             )
         else:
-            year_end_inclusive = target_years_range[-1]
             year_start_inclusive = target_years_range[0]
+            year_end_inclusive = target_years_range[-1]
 
         return range(year_start_inclusive, year_end_inclusive + 1)
 
@@ -291,7 +307,9 @@ class DatasetGenerator:
         ]
 
         with mp.Pool(processes=self.max_cpu_concurrency) as pool:
-            input_data_years_indexes = pool.starmap(self.process_dynamic_input_data_years, args)
+            input_data_years_indexes = pool.starmap(
+                self.process_dynamic_input_data_years, args
+            )
 
         input_data_index = {}
         for input_data_years_index in input_data_years_indexes:
@@ -316,7 +334,6 @@ class DatasetGenerator:
                 is_affected_by_fires
             ):
                 with logger.contextualize(year=year):
-                    logger.info(f"Processing year {year}...")
                     months_files_paths = []
                     for month in self.get_months_range():
                         with logger.contextualize(month=month):
@@ -359,7 +376,10 @@ class DatasetGenerator:
                     logger.info("Resizing and reprojecting...")
                     data_type = data_info.get("data_type", None)
                     resized_file_path = self.resize_and_reproject(
-                        yearly_aggregated_file_path, year_output_folder, data_type
+                        yearly_aggregated_file_path,
+                        year_output_folder,
+                        data_type,
+                        source_srid=self.config["projections"]["source_srid"],
                     )
 
                     logger.info("Creating tiles...")
@@ -367,8 +387,6 @@ class DatasetGenerator:
                         resized_file_path, year_output_folder, big_tiles_boundaries
                     )
                     data_years_index[data_name][year] = tiles_files_paths
-
-                    logger.info(f"Finished processing year {year}!")
 
         return data_years_index
 
@@ -385,7 +403,9 @@ class DatasetGenerator:
         ]
 
         with mp.Pool(processes=self.max_cpu_concurrency) as pool:
-            inputs_data_files_paths = pool.starmap(self.process_static_input_data_layer, args)
+            inputs_data_files_paths = pool.starmap(
+                self.process_static_input_data_layer, args
+            )
 
         all_years = set()
         for year_data in input_data_index.values():
@@ -394,6 +414,7 @@ class DatasetGenerator:
 
         for input_data_files_paths in inputs_data_files_paths:
             for data_name, files_paths in input_data_files_paths.items():
+                input_data_index[data_name] = {}
                 for year in all_years:
                     input_data_index[data_name][year] = files_paths
 
@@ -431,7 +452,10 @@ class DatasetGenerator:
             logger.info("Resizing and reprojecting...")
             data_type = "categorical"
             resized_file_path = self.resize_and_reproject(
-                merged_file_path, static_output_folder_path, data_type
+                merged_file_path,
+                static_output_folder_path,
+                data_type,
+                source_srid=self.config["projections"]["source_srid"],
             )
 
             logger.info("Creating tiles...")
@@ -446,7 +470,7 @@ class DatasetGenerator:
         input_file: Path,
         output_folder_path: Path,
         big_tiles_boundaries: gpd.GeoDataFrame,
-        create_child_folder: bool = True
+        create_child_folder: bool = True,
     ) -> list:
         if create_child_folder:
             tiles_output_folder = output_folder_path / "tiles"
@@ -456,21 +480,25 @@ class DatasetGenerator:
 
         tiles_paths = []
 
-        for tile_index, (_, tile) in enumerate(big_tiles_boundaries.iterrows()):
+        for tile_index, tile in big_tiles_boundaries.iterrows():
             tile_output_file = (
                 tiles_output_folder / f"tile_{tile_index}{get_extension('gtiff')}"
             )
             bounds = tile["geometry"].bounds
             minx, miny, maxx, maxy = bounds
             self.run_command(
-                f"gdalwarp -multi -te {minx} {miny} {maxx} {maxy} {str(input_file)} {str(tile_output_file)}"
+                f"gdalwarp -multi -of GTiff -te {minx} {miny} {maxx} {maxy} {str(input_file)} {str(tile_output_file)}"
             )
             tiles_paths.append(tile_output_file)
 
         return tiles_paths
 
     def resize_and_reproject(
-        self, input_file: Path, output_folder_path: Path, data_type: str
+        self,
+        input_file: Path,
+        output_folder_path: Path,
+        data_type: str,
+        source_srid: int,
     ):
         output_file_path = (
             output_folder_path
@@ -479,8 +507,6 @@ class DatasetGenerator:
         )
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        source_srid = self.config["projections"]["source_srid"]
-
         target_srid = self.config["projections"]["target_srid"]
 
         pixel_size_in_meters = self.config["resolution"]["pixel_size_in_meters"]
@@ -488,7 +514,7 @@ class DatasetGenerator:
         resampling_algorithm = self.get_resampling_algorithm(data_type)
 
         self.run_command(
-            f"gdalwarp -multi -r {resampling_algorithm} -s_srs EPSG:{source_srid} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -of GTiff {str(input_file)} {str(output_file_path)}"
+            f"gdalwarp -multi -r {resampling_algorithm} -s_srs EPSG:{source_srid} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -cutline_srs EPSG:{self.canada_boundary.target_epsg} -cutline {str(self.canada_boundary.boundary_file)} -crop_to_cutline -of GTiff {str(input_file)} {str(output_file_path)}"
         )
 
         return output_file_path
@@ -521,7 +547,7 @@ class DatasetGenerator:
         if data_info.get("aggregate_by", None) == "average":
             operation = np.mean
         elif data_info.get("aggregate_by", None) == "max":
-            operation = np.maximum
+            operation = np.max
         else:
             raise ValueError(
                 f"Unknown aggregation strategy {data_info.get('aggregate_by', None)}!"
@@ -582,7 +608,7 @@ class DatasetGenerator:
         if data_info.get("aggregate_by", None) == "average":
             operation = np.mean
         elif data_info.get("aggregate_by", None) == "max":
-            operation = np.maximum
+            operation = np.max
         else:
             raise ValueError(
                 f"Unknown aggregation strategy {data_info.get('aggregate_by', None)}!"
