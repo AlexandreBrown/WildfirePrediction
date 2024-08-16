@@ -134,7 +134,7 @@ So each big tile represents the data inputs stacked for 1 year for the area deli
     - The sources names must match the folder name created during the download step. 
 2. Execute the dataset generation script :  
     ```bash
-    LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libtcmalloc_minimal.so.4 python -m generate_dataset
+    python -m generate_dataset
     ```
 
 # Contributing  
