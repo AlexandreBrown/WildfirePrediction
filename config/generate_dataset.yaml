@@ -104,20 +104,18 @@ input_data:
         data_type: "continuous"
         fill_values: [249, 250, 251, 252, 253, 254, 255]
         is_affected_by_fires: true
-      MOD44W_061_water_mask:
-        netcdf_layer: "water_mask"
-        aggregation_strategy: "max"
-        data_type: "categorical"
-        fill_values: [250, 253]
-        is_affected_by_fires: true
       MOD14A2_061_FireMask:
         netcdf_layer: "FireMask"
         aggregation_strategy: "max"
         data_type: "categorical"
-        fill_values: [0]
+        fill_values: [0, 1, 2]
         is_affected_by_fires: true
     static:
       SRTMGL3_NC_003_SRTMGL3_DEM:
         netcdf_layer: ""
         data_type: "continuous"
-        fill_values: []
+        fill_values: [-32768]
+      ASTWBD_ATTNC_001_ASTWBD_att:
+        netcdf_layer: ""
+        data_type: "categorical"
+        fill_values: [-99999]
