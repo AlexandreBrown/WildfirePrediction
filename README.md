@@ -6,74 +6,49 @@ The objective is to predict the future fire occurrences for the next years given
 ## Boundaries
 - [Canada Boundary Shapefile](https://open.canada.ca/data/en/dataset/a883eb14-0c0e-45c4-b8c4-b54c4a819edb)  
 
-## Data  
+## Input Data  
 The model receives as input the following data (we stack the data from multiple years).  
 For data that is not affected by fires (eg: weather data), we use the data for the current year and for data that is affected by fires (eg: vegetation data), we use the data from a previous year(s).  
 For instance, if we want to predict the wildfires for the year 2005, then we will use the weather data from 2005 and the vegetation data from 2004 (or 2004 and 2003 if the history window is longer, this is configurable when training).   
-### Dynamic  
-Dynamic data is data that changes with time. This data is updated on a daily/weekly/bi-weekly/monthly/yearly basis (depending on which data).
+### Dynamic Input Data  
+Dynamic input data is data that changes over time. This data is updated on a daily/weekly/bi-weekly/monthly/yearly basis (depending on which data input).
 #### Vegetation
 - [MODIS/Terra Vegetation Indices 16-Day L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod13q1v061/)
-  - Temporal Extent : 2000-02-18 to Present
-  - Layers Used : 
-    - Normalized Difference Vegetation Index (NDVI)
-    - Enhanced Vegetation Index (EVI)
+  - Normalized Difference Vegetation Index (NDVI)
+  - Enhanced Vegetation Index (EVI)
 - [MODIS/Terra Vegetation Continuous Fields Yearly L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod44bv061/)
-  - Temporal Extent : 2000-03-05 to Present  
-  - Layers Used : 
-    - Percent Tree Cover  
-    - Percent Non-Tree Cover
-    - Percent Non Vegetated
+  - Percent Tree Cover  
+  - Percent Non-Tree Cover
+  - Percent Non Vegetated 
 - [MODIS/Terra Leaf Area Index/FPAR 8-Day L4 Global 500 m SIN Grid](https://lpdaac.usgs.gov/products/mod15a2hv061/)
-  - Temporal Extent : 2000-02-18 to Present
-  - Layers Used : 
-    - Leaf Area Index (LAI) 
-
+  - Leaf Area Index (LAI) 
 #### Weather
 - [ERA5 Reanalysis 100m U component of wind](https://codes.ecmwf.int/grib/param-db/228246)
-  - Temporal Extent : 1940-01-01 to Present
-  - Layers Used : 
-    - 100m U component of wind
+  - 100m U component of wind 
 - [ERA5 Reanalysis 100m V component of wind](https://codes.ecmwf.int/grib/param-db/132)
-  - Temporal Extent : 1940-01-01 to Present
-  - Layers Used : 
-    - 100m V component of wind
+  - 100m V component of wind
 - [ERA5 Reanalysis 2m Temperature](https://codes.ecmwf.int/grib/param-db/167)
-  - Temporal Extent : 1940-01-01 to Present
-  - Layers Used : 
-    - 2m Temperature
+  - 2m Temperature
 - [ERA5 Reanalysis Potential evaporation](https://codes.ecmwf.int/grib/param-db/228251)
-  - Temporal Extent : 1940-01-01 to Present
-  - Layers Used : 
-    - Potential evaporation
+  - Potential evaporation
 - [ERA5 Reanalysis Surface net solar radiation](https://codes.ecmwf.int/grib/param-db/176)
-  - Temporal Extent : 1940-01-01 to Present
-  - Layers Used : 
-    - Surface net solar radiation
+  - Surface net solar radiation
 - [ERA5 Reanalysis Surface runoff](https://codes.ecmwf.int/grib/param-db/8)
-  - Temporal Extent : 1940-01-01 to Present
-  - Layers Used : 
-    - Surface runoff
+  - Surface runoff
 - [ERA5 Reanalysis Total precipitation](https://codes.ecmwf.int/grib/param-db/228)
-  - Temporal Extent : 1940-01-01 to Present
-  - Layers Used : 
-    - Total precipitation
-
+  - Total precipitation
 #### Thematic
-- [MODIS/Terra Land Water Mask Derived from MODIS and SRTM L3 Yearly Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod44wv061/)
-  - Temporal Extent : 2000-01-01 to Present
-  - Layers Used : 
-    - Water Mask
 - [MODIS/Terra Thermal Anomalies/Fire 8-Day L3 Global 1 km SIN Grid](https://lpdaac.usgs.gov/products/mod14a2v061/)
-  - Temporal Extent : 2000-02-18 to Present
-  - Layers Used : 
-    - Fire Mask  
+  - Fire Mask  
 
-### Static  
-Static data is the data that does not change over time or for which we only have 1 time slice.
+### Static Input Data
+Static input data is data that does not change over time or for which we only have 1 time slice.
 #### Elevation 
 - [NASA Shuttle Radar Topography Mission Global 3 arc second](https://lpdaac.usgs.gov/products/srtmgl3v003/)
   - Elevation
+#### Water Bodies
+- [ASTER Global Water Bodies Database](https://lpdaac.usgs.gov/products/astwbdv001/)
+  - ASTWBD_att
 
 ### Data Aggregation  
 - All the data that is not already yearly based is averaged to have a yearly temporal granularity.  

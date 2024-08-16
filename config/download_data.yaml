@@ -33,8 +33,8 @@ sources:
                 - Percent_Tree_Cover
             - MOD15A2H.061:
                 - Lai_500m
-            - MOD44W.061:
-                - water_mask
+            - ASTWBD_ATTNC.001:
+                - ASTWBD_att
             - MOD14A2.061:
                 - FireMask
             - SRTMGL3_NC.003:
