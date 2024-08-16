@@ -1,3 +1,4 @@
+debug: false
 periods:
     year_start_inclusive: 2000
     year_end_inclusive: 2023

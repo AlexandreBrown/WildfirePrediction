@@ -30,43 +30,43 @@ input_data:
         netcdf_layer: ""
         aggregation_strategy: "average"
         data_type: "continuous"
-        fill_values: []
+        fill_values: [-32767]
         is_affected_by_fires: false
       era5_reanalysis_100m_v_component_of_wind:
         netcdf_layer: ""
         aggregation_strategy: "average"
         data_type: "continuous"
-        fill_values: []
+        fill_values: [-32767]
         is_affected_by_fires: false
       era5_reanalysis_2m_temperature:
         netcdf_layer: ""
         aggregation_strategy: "average"
         data_type: "continuous"
-        fill_values: []
+        fill_values: [-32767]
         is_affected_by_fires: false
       era5_reanalysis_potential_evaporation:
         netcdf_layer: ""
         aggregation_strategy: "average"
         data_type: "continuous"
-        fill_values: []
+        fill_values: [-32767]
         is_affected_by_fires: false
       era5_reanalysis_surface_net_solar_radiation:
         netcdf_layer: ""
         aggregation_strategy: "average"
         data_type: "continuous"
-        fill_values: []
+        fill_values: [-32767]
         is_affected_by_fires: false
       era5_reanalysis_surface_runoff:
         netcdf_layer: ""
         aggregation_strategy: "average"
         data_type: "continuous"
-        fill_values: []
+        fill_values: [-32767]
         is_affected_by_fires: false
       era5_reanalysis_total_precipitation:
         netcdf_layer: ""
         aggregation_strategy: "average"
         data_type: "continuous"
-        fill_values: []
+        fill_values: [-32767]
         is_affected_by_fires: false
       MOD13Q1_061__250m_16_days_NDVI:
         netcdf_layer: "_250m_16_days_NDVI"

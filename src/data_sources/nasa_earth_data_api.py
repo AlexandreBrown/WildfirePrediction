@@ -125,6 +125,32 @@ class NasaEarthDataApi:
     def load_projections(self) -> dict:
         self.projections = requests.get(f"{self.base_url}spatial/proj").json()
 
+    def get_tasks_info_from_products_layers(
+        self,
+        tasks_info: list,
+        products: list,
+        layers: list,
+        year_start_inclusive: int,
+        year_end_inclusive: int,
+        month_start_inclusive: int,
+        month_end_inclusive: int,
+    ) -> list:
+        tasks_info_to_keep = []
+
+        for task_info in tasks_info:
+            if (
+                task_info["product"] in products
+                and task_info["layer"] in layers
+                and task_info["year"] >= year_start_inclusive
+                and task_info["year"] <= year_end_inclusive
+                and task_info["month"] >= month_start_inclusive
+                and task_info["month"] <= month_end_inclusive
+            ):
+                tasks_info_to_keep.append(task_info)
+
+        logger.info(f"Loaded {len(tasks_info_to_keep)} tasks from logs!")
+        return tasks_info_to_keep
+
     def submit_tasks(
         self,
         tiles: gpd.GeoDataFrame,
@@ -134,6 +160,8 @@ class NasaEarthDataApi:
         month_end_inclusive: int,
         pixel_size_in_meters: int,
         tile_size_in_pixels: int,
+        products_names: list,
+        products_layers: list,
         logs_folder_path: Optional[str] = None,
     ):
         nasa_earth_data_expected_epsg = 4326
@@ -146,7 +174,16 @@ class NasaEarthDataApi:
             with open(
                 self.logs_folder_path / self.earth_data_tasks_info_file_name, "r"
             ) as f:
-                self.tasks_info = json.load(f)
+                self.all_tasks_info = json.load(f)
+                self.tasks_info = self.get_tasks_info_from_products_layers(
+                    self.all_tasks_info,
+                    products_names,
+                    products_layers,
+                    year_start_inclusive,
+                    year_end_inclusive,
+                    month_start_inclusive,
+                    month_end_inclusive,
+                )
 
             tasks_hash = {t["task_hash"]: True for t in self.tasks_info}
         else:
@@ -154,6 +191,7 @@ class NasaEarthDataApi:
             self.logs_folder_path = Path(f"logs/download_data/{timestamp}")
             self.logs_folder_path.mkdir(parents=True, exist_ok=True)
             tasks_hash = {}
+            self.all_tasks_info = []
             self.tasks_info = []
 
         logger.info("Submitting tasks...")
@@ -317,7 +355,14 @@ class NasaEarthDataApi:
         with open(
             self.logs_folder_path / self.earth_data_tasks_info_file_name, "w"
         ) as f:
-            json.dump(self.tasks_info, f)
+            merged_tasks_info = self.tasks_info
+            for task_info in self.all_tasks_info:
+                if task_info["task_hash"] not in [
+                    t["task_hash"] for t in merged_tasks_info
+                ]:
+                    merged_tasks_info.append(task_info)
+
+            json.dump(merged_tasks_info, f)
 
     def delete_tasks(self, tasks_ids: list):
         for task_id in tasks_ids:
@@ -413,7 +458,10 @@ class NasaEarthDataApi:
 
         files = {f["file_id"]: f["file_name"] for f in bundle["files"]}
 
-        asyncio_semaphore = asyncio.Semaphore(24)
+        logger.debug(f"Downloading {len(files)} files for task {task_id}...")
+
+        semaphore_max = min(24, len(files))
+        asyncio_semaphore = asyncio.Semaphore(semaphore_max)
         tasks = set()
         for file_id, file_name in files.items():
             task = asyncio.create_task(
