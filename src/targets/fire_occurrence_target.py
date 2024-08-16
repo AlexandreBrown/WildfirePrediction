@@ -1,6 +1,5 @@
 import numpy as np
 import asyncio
-import psutil
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from loguru import logger
@@ -8,6 +7,7 @@ from boundaries.canada_boundary import CanadaBoundary
 from data_sources.nbac_fire_data_source import NbacFireDataSource
 from osgeo import gdal, osr
 from raster_io.read import get_extension
+from logging_utils.logging import get_ram_total, get_ram_used
 
 
 class FireOccurrenceTarget:
@@ -41,7 +41,11 @@ class FireOccurrenceTarget:
                 years.add(year)
 
         logger.info(f"Downloading fire polygons for all {len(years)} years...")
-        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
+        logger.opt(lazy=True).debug(
+            "RAM Usage: {used:.2f}/{total:.2f}",
+            used=get_ram_used(),
+            total=get_ram_total(),
+        )
 
         io_semaphore = asyncio.Semaphore(self.max_io_concurrency)
 
@@ -60,7 +64,11 @@ class FireOccurrenceTarget:
         }
 
         logger.info("Computing output bounds based on boundary...")
-        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
+        logger.opt(lazy=True).debug(
+            "RAM Usage: {used:.2f}/{total:.2f}",
+            used=get_ram_used(),
+            total=get_ram_total(),
+        )
 
         x_min, y_min, x_max, y_max = self.boundary.boundary.total_bounds
 
@@ -87,7 +95,11 @@ class FireOccurrenceTarget:
             for year in years
         ]
         logger.info(f"Rasterizing fire polgyons for all {len(years)} years...")
-        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
+        logger.opt(lazy=True).debug(
+            "RAM Usage: {used:.2f}/{total:.2f}",
+            used=get_ram_used(),
+            total=get_ram_total(),
+        )
 
         loop = asyncio.get_event_loop()
         with ProcessPoolExecutor(max_workers=self.max_cpu_concurrency) as executor:
@@ -116,7 +128,11 @@ class FireOccurrenceTarget:
             for years_range in years_ranges
         ]
         logger.info(f"Combining rasters for all {len(years_ranges)} years ranges...")
-        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
+        logger.opt(lazy=True).debug(
+            "RAM Usage: {used:.2f}/{total:.2f}",
+            used=get_ram_used(),
+            total=get_ram_total(),
+        )
 
         with ProcessPoolExecutor(max_workers=self.max_cpu_concurrency) as executor:
             combine_tasks = [
@@ -133,7 +149,11 @@ class FireOccurrenceTarget:
         }
 
         logger.info("Target generation done!")
-        logger.debug(f"RAM Usage : {psutil.virtual_memory().percent}/100")
+        logger.opt(lazy=True).debug(
+            "RAM Usage: {used:.2f}/{total:.2f}",
+            used=get_ram_used(),
+            total=get_ram_total(),
+        )
 
         return years_ranges_combined_rasters
 
