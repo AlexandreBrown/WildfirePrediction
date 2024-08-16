@@ -290,7 +290,28 @@ class DatasetGenerator:
             f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)} > /dev/null"
         )
 
+        self.update_nodata_value(output_file)
+
         vrt_file.unlink()
+
+    def update_nodata_value(self, file_path: Path):
+        stacked_dataset = gdal.Open(str(file_path), gdal.GA_Update)
+
+        new_nodata_value = float(self.config["no_data_value"])
+
+        for band_index in range(1, stacked_dataset.RasterCount + 1):
+            band = stacked_dataset.GetRasterBand(band_index)
+            previous_nodata_value = band.GetNoDataValue()
+
+            if previous_nodata_value is not None:
+                band_data = band.ReadAsArray()
+                band_data[band_data == previous_nodata_value] = new_nodata_value
+                band.WriteArray(band_data)
+
+            band.SetNoDataValue(new_nodata_value)
+            stacked_dataset.FlushCache()
+
+        del stacked_dataset
 
     def get_is_affected_by_fires(self, data_name_to_lookup: str) -> bool:
         dynamic_data = self.config["input_data"].get("dynamic", {})

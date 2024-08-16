@@ -184,7 +184,8 @@ class FireOccurrenceTarget:
         output_folder.mkdir(parents=True, exist_ok=True)
         output_raster_path = output_folder / f"{year}{output_extension}"
         nb_bands = 1
-        output_raster_ds = gdal.GetDriverByName(self.output_format).Create(
+        output_driver = gdal.GetDriverByName(self.output_format)
+        output_raster_ds = output_driver.Create(
             str(output_raster_path.resolve()),
             output_raster_width_in_pixels,
             output_raster_height_in_pixels,
