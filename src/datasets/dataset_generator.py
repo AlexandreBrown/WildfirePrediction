@@ -11,6 +11,7 @@ from grid.square_meters_grid import SquareMetersGrid
 from data_sources.nbac_fire_data_source import NbacFireDataSource
 from targets.fire_occurrence_target import FireOccurrenceTarget
 from raster_io.read import get_extension, get_formatted_file_path
+from logging_utils.logging import get_ram_used, get_ram_total
 
 
 class DatasetGenerator:
@@ -29,6 +30,12 @@ class DatasetGenerator:
 
     async def generate_dataset(self):
         logger.info("Generating dataset...")
+
+        logger.opt(lazy=True).debug(
+            "RAM Usage: {used:.2f}/{total:.2f}",
+            used=get_ram_used(),
+            total=get_ram_total(),
+        )
 
         dataset_folder_path = self.create_dataset_folder_path()
 
@@ -61,6 +68,12 @@ class DatasetGenerator:
                 target_years_ranges,
             )
 
+            logger.opt(lazy=True).debug(
+                "RAM Usage: {used:.2f}/{total:.2f}",
+                used=get_ram_used(),
+                total=get_ram_total(),
+            )
+            logger.success("Dataset generation DONE !")
         except BaseException as e:
             logger.error(f"Error: {e}")
             raise e
@@ -105,9 +118,9 @@ class DatasetGenerator:
                     / f"tiles_{years_range[0]}_{years_range[-1]}/"
                 )
 
-                logger.info("Resizing and reprojecting...")
+                logger.info("Resizing, reprojecting and clipping raster...")
                 data_type = "categorical"
-                resized_file_path = self.resize_and_reproject(
+                resized_file_path = self.resize_reproject_clip_raster(
                     combined_raster_path,
                     tiles_preprocessing_output_folder,
                     data_type,
@@ -197,11 +210,12 @@ class DatasetGenerator:
         target_years_ranges: list,
         input_data_index: dict,
     ):
-        with mp.Pool(processes=self.max_cpu_concurrency) as pool:
-            args = [
-                (output_folder_path, target_years_range, input_data_index)
-                for target_years_range in target_years_ranges
-            ]
+        args = [
+            (output_folder_path, target_years_range, input_data_index)
+            for target_years_range in target_years_ranges
+        ]
+        nb_processes = min(self.max_cpu_concurrency, len(args))
+        with mp.Pool(processes=nb_processes) as pool:
             pool.starmap(self.stack_input_data_for_years_range, args)
 
     def stack_input_data_for_years_range(
@@ -211,6 +225,11 @@ class DatasetGenerator:
         input_data_index: dict,
     ):
         logger.info(f"Stacking data for target years range {target_years_range}...")
+        logger.opt(lazy=True).debug(
+            "RAM Usage: {used:.2f}/{total:.2f}",
+            used=get_ram_used(),
+            total=get_ram_total(),
+        )
         target_years_range_output_folder = (
             output_folder_path
             / Path("input_data")
@@ -218,10 +237,14 @@ class DatasetGenerator:
         )
         target_years_range_output_folder.mkdir(parents=True, exist_ok=True)
 
-        tiles = [
-            file_path.stem
-            for file_path in list(list(input_data_index.values())[0].values())[0]
-        ]
+        first_data_values = list(input_data_index.values())[0]
+
+        if isinstance(first_data_values, list):
+            tiles = [file_path.stem for file_path in first_data_values]
+        else:
+            tiles = [
+                file_path.stem for file_path in list(first_data_values.values())[0]
+            ]
 
         for tile_name in tiles:
 
@@ -237,17 +260,20 @@ class DatasetGenerator:
                 )
 
                 for year in data_years_range:
-                    data_year_tiles_paths = list(years_index[year])
-                    data_year_tile_path = next(
-                        filter(
-                            lambda path: path.stem == tile_name, data_year_tiles_paths
-                        )
+                    if isinstance(years_index, list):
+                        data_tiles_paths = years_index
+                    else:
+                        data_tiles_paths = list(years_index[year])
+                    matching_tile_path = next(
+                        filter(lambda path: path.stem == tile_name, data_tiles_paths)
                     )
-                    files_to_stack.append(str(data_year_tile_path))
+                    files_to_stack.append(str(matching_tile_path))
 
             self.stack_files(
                 files_to_stack, target_years_range_output_folder, tile_name
             )
+
+        logger.complete()
 
     def stack_files(self, files_to_stack: list, output_folder: Path, tile_name: str):
         output_file = output_folder / f"{tile_name}{get_extension('gtiff')}"
@@ -257,22 +283,24 @@ class DatasetGenerator:
         gdalbuildvrt_cmd = f"gdalbuildvrt -separate {str(vrt_file)} " + " ".join(
             files_to_stack
         )
+        gdalbuildvrt_cmd += " > /dev/null"
         self.run_command(gdalbuildvrt_cmd)
 
-        gdal_translate_cmd = f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)}"
-        self.run_command(gdal_translate_cmd)
+        self.run_command(
+            f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)} > /dev/null"
+        )
 
         vrt_file.unlink()
 
-    def get_is_affected_by_fires(self, data_name: str) -> bool:
+    def get_is_affected_by_fires(self, data_name_to_lookup: str) -> bool:
         dynamic_data = self.config["input_data"].get("dynamic", {})
         for data_name, data_info in dynamic_data.items():
-            if data_name == data_name:
+            if data_name_to_lookup == data_name:
                 return data_info.get("is_affected_by_fires", False)
 
         static_data = self.config["input_data"].get("static", {})
         for data_name, data_info in static_data.items():
-            if data_name == data_name:
+            if data_name_to_lookup == data_name:
                 return False
 
         raise ValueError(f"Data name {data_name} not found in input data!")
@@ -283,14 +311,14 @@ class DatasetGenerator:
         is_affected_by_fires: bool,
     ) -> range:
         if is_affected_by_fires:
-            year_end_inclusive = target_years_range[0] - 1
             year_start_inclusive = (
-                year_end_inclusive
+                target_years_range[0]
                 - self.config["periods"][
                     "input_data_affected_by_fires_period_length_in_years"
                 ]
-                + 1
             )
+
+            year_end_inclusive = target_years_range[0] - 1
         else:
             year_start_inclusive = target_years_range[0]
             year_end_inclusive = target_years_range[-1]
@@ -300,18 +328,23 @@ class DatasetGenerator:
     def process_dynamic_input_data(
         self, output_folder_path: Path, big_tiles_boundaries: gpd.GeoDataFrame
     ) -> dict:
+        input_data_index = {}
+
         dynamic_data = self.config["input_data"].get("dynamic", {})
         args = [
             (output_folder_path, data_name, data_info, big_tiles_boundaries)
             for data_name, data_info in dynamic_data.items()
         ]
 
-        with mp.Pool(processes=self.max_cpu_concurrency) as pool:
+        if len(args) == 0:
+            return input_data_index
+
+        nb_processes = min(self.max_cpu_concurrency, len(args))
+        with mp.Pool(processes=nb_processes) as pool:
             input_data_years_indexes = pool.starmap(
                 self.process_dynamic_input_data_years, args
             )
 
-        input_data_index = {}
         for input_data_years_index in input_data_years_indexes:
             for data_name, years_index in input_data_years_index.items():
                 input_data_index[data_name] = years_index
@@ -328,7 +361,7 @@ class DatasetGenerator:
         with logger.contextualize(data_name=data_name):
             is_affected_by_fires = data_info.get("is_affected_by_fires", False)
 
-            data_years_index = {data_name: {}}
+            data_years_index = {}
 
             for year in self.get_dynamic_input_data_total_years_extent(
                 is_affected_by_fires
@@ -351,15 +384,30 @@ class DatasetGenerator:
                             )
 
                             logger.info("Merging files...")
+                            logger.opt(lazy=True).debug(
+                                "RAM Usage: {used:.2f}/{total:.2f}",
+                                used=get_ram_used(),
+                                total=get_ram_total(),
+                            )
                             merged_file_path = self.merge_spatially(
                                 data_input_folder,
                                 month_output_folder,
                                 data_info,
                             )
+                            logger.opt(lazy=True).debug(
+                                "RAM Usage: {used:.2f}/{total:.2f}",
+                                used=get_ram_used(),
+                                total=get_ram_total(),
+                            )
 
                             logger.info("Aggregating bands for month...")
                             month_aggregated_file_path = self.aggregate_file(
                                 merged_file_path, month_output_folder, data_info
+                            )
+                            logger.opt(lazy=True).debug(
+                                "RAM Usage: {used:.2f}/{total:.2f}",
+                                used=get_ram_used(),
+                                total=get_ram_total(),
                             )
                             months_files_paths.append(month_aggregated_file_path)
 
@@ -372,22 +420,34 @@ class DatasetGenerator:
                     yearly_aggregated_file_path = self.aggregate_files(
                         months_files_paths, year_output_folder, data_info
                     )
+                    logger.opt(lazy=True).debug(
+                        "RAM Usage: {used:.2f}/{total:.2f}",
+                        used=get_ram_used(),
+                        total=get_ram_total(),
+                    )
 
-                    logger.info("Resizing and reprojecting...")
+                    logger.info("Resizing, reprojecting and clipping raster...")
                     data_type = data_info.get("data_type", None)
-                    resized_file_path = self.resize_and_reproject(
+                    resized_file_path = self.resize_reproject_clip_raster(
                         yearly_aggregated_file_path,
                         year_output_folder,
                         data_type,
                         source_srid=self.config["projections"]["source_srid"],
+                    )
+                    logger.opt(lazy=True).debug(
+                        "RAM Usage: {used:.2f}/{total:.2f}",
+                        used=get_ram_used(),
+                        total=get_ram_total(),
                     )
 
                     logger.info("Creating tiles...")
                     tiles_files_paths = self.create_tiles(
                         resized_file_path, year_output_folder, big_tiles_boundaries
                     )
+                    if data_name not in data_years_index.keys():
+                        data_years_index[data_name] = {}
                     data_years_index[data_name][year] = tiles_files_paths
-
+        logger.complete()
         return data_years_index
 
     def process_static_input_data(
@@ -402,21 +462,18 @@ class DatasetGenerator:
             for data_name, data_info in static_data.items()
         ]
 
-        with mp.Pool(processes=self.max_cpu_concurrency) as pool:
+        if len(args) == 0:
+            return
+
+        nb_processes = min(self.max_cpu_concurrency, len(args))
+        with mp.Pool(processes=nb_processes) as pool:
             inputs_data_files_paths = pool.starmap(
                 self.process_static_input_data_layer, args
             )
 
-        all_years = set()
-        for year_data in input_data_index.values():
-            for year in year_data.keys():
-                all_years.add(year)
-
         for input_data_files_paths in inputs_data_files_paths:
             for data_name, files_paths in input_data_files_paths.items():
-                input_data_index[data_name] = {}
-                for year in all_years:
-                    input_data_index[data_name][year] = files_paths
+                input_data_index[data_name] = files_paths
 
     def process_static_input_data_layer(
         self,
@@ -448,14 +505,24 @@ class DatasetGenerator:
                 static_output_folder_path,
                 data_info,
             )
+            logger.opt(lazy=True).debug(
+                "RAM Usage: {used:.2f}/{total:.2f}",
+                used=get_ram_used(),
+                total=get_ram_total(),
+            )
 
-            logger.info("Resizing and reprojecting...")
+            logger.info("Resizing, reprojecting and clipping raster...")
             data_type = "categorical"
-            resized_file_path = self.resize_and_reproject(
+            resized_file_path = self.resize_reproject_clip_raster(
                 merged_file_path,
                 static_output_folder_path,
                 data_type,
                 source_srid=self.config["projections"]["source_srid"],
+            )
+            logger.opt(lazy=True).debug(
+                "RAM Usage: {used:.2f}/{total:.2f}",
+                used=get_ram_used(),
+                total=get_ram_total(),
             )
 
             logger.info("Creating tiles...")
@@ -463,6 +530,13 @@ class DatasetGenerator:
                 resized_file_path, static_output_folder_path, big_tiles_boundaries
             )
 
+        logger.opt(lazy=True).debug(
+            "RAM Usage: {used:.2f}/{total:.2f}",
+            used=get_ram_used(),
+            total=get_ram_total(),
+        )
+
+        logger.complete()
         return {data_name: tiles_files_paths}
 
     def create_tiles(
@@ -487,25 +561,19 @@ class DatasetGenerator:
             bounds = tile["geometry"].bounds
             minx, miny, maxx, maxy = bounds
             self.run_command(
-                f"gdalwarp -multi -of GTiff -te {minx} {miny} {maxx} {maxy} {str(input_file)} {str(tile_output_file)}"
+                f"gdalwarp --quiet -multi -of GTiff -te {minx} {miny} {maxx} {maxy} {str(input_file)} {str(tile_output_file)}"
             )
             tiles_paths.append(tile_output_file)
 
         return tiles_paths
 
-    def resize_and_reproject(
+    def resize_reproject_clip_raster(
         self,
         input_file: Path,
         output_folder_path: Path,
         data_type: str,
         source_srid: int,
     ):
-        output_file_path = (
-            output_folder_path
-            / Path("resized_reprojected")
-            / Path(f"resized_reprojected{get_extension('gtiff')}")
-        )
-        output_file_path.parent.mkdir(parents=True, exist_ok=True)
 
         target_srid = self.config["projections"]["target_srid"]
 
@@ -513,11 +581,30 @@ class DatasetGenerator:
 
         resampling_algorithm = self.get_resampling_algorithm(data_type)
 
+        xmin, ymin, xmax, ymax = self.canada_boundary.boundary.total_bounds
+
+        resized_output_file_path = (
+            output_folder_path
+            / Path("resized_reprojected")
+            / Path(f"resized_reprojected{get_extension('gtiff')}")
+        )
+        resized_output_file_path.parent.mkdir(parents=True, exist_ok=True)
         self.run_command(
-            f"gdalwarp -multi -r {resampling_algorithm} -s_srs EPSG:{source_srid} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -cutline_srs EPSG:{self.canada_boundary.target_epsg} -cutline {str(self.canada_boundary.boundary_file)} -crop_to_cutline -of GTiff {str(input_file)} {str(output_file_path)}"
+            f"gdalwarp --quiet -multi -te {xmin} {ymin} {xmax} {ymax} -r {resampling_algorithm} -s_srs EPSG:{source_srid} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -of GTiff {str(input_file)} {str(resized_output_file_path)}"
         )
 
-        return output_file_path
+        clipped_ouput_file_path = (
+            output_folder_path
+            / Path("clipped")
+            / Path(f"clipped{get_extension('gtiff')}")
+        )
+        clipped_ouput_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        self.run_command(
+            f"gdalwarp --quiet -multi -cutline_srs EPSG:{self.canada_boundary.target_epsg} -cutline {str(self.canada_boundary.boundary_file)} -crop_to_cutline -of GTiff {str(resized_output_file_path)} {str(clipped_ouput_file_path)}"
+        )
+
+        return clipped_ouput_file_path
 
     def get_resampling_algorithm(self, data_type: str) -> str:
         if data_type == "continuous":
@@ -541,22 +628,15 @@ class DatasetGenerator:
             / Path("aggregated")
             / Path(f"aggregated{get_extension('GTiff')}")
         )
-
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if data_info.get("aggregate_by", None) == "average":
-            operation = np.mean
-        elif data_info.get("aggregate_by", None) == "max":
-            operation = np.max
-        else:
-            raise ValueError(
-                f"Unknown aggregation strategy {data_info.get('aggregate_by', None)}!"
-            )
+        aggregation_strategy = data_info["aggregation_strategy"]
+        fill_values = data_info["fill_values"]
 
         input_dataset = gdal.Open(str(input_file), gdal.GA_ReadOnly)
         xsize = input_dataset.RasterXSize
         ysize = input_dataset.RasterYSize
-        block_size = 2048
+        block_size = 8192
 
         output_driver = gdal.GetDriverByName("GTiff")
         output_dataset = output_driver.Create(
@@ -576,14 +656,43 @@ class DatasetGenerator:
                 x_block_size = min(block_size, xsize - x)
                 y_block_size = min(block_size, ysize - y)
 
-                aggregated_data = np.zeros(
+                sum_data = np.zeros((y_block_size, x_block_size), dtype=np.float32)
+                max_data = np.full(
+                    (y_block_size, x_block_size), -np.inf, dtype=np.float32
+                )
+                valid_pixel_count = np.zeros(
                     (y_block_size, x_block_size), dtype=np.float32
                 )
 
                 for i in range(1, input_dataset.RasterCount + 1):
                     band = input_dataset.GetRasterBand(i)
                     data = band.ReadAsArray(x, y, x_block_size, y_block_size)
-                    aggregated_data = operation([aggregated_data, data], axis=0)
+
+                    mask_values_to_ignore = np.isin(data, fill_values)
+                    mask_values_to_aggregate = np.logical_not(mask_values_to_ignore)
+                    valid_pixel_count[mask_values_to_aggregate] += 1
+
+                    if aggregation_strategy == "average":
+                        sum_data[mask_values_to_aggregate] += data[
+                            mask_values_to_aggregate
+                        ]
+                    elif aggregation_strategy == "max":
+                        max_data[mask_values_to_aggregate] = np.maximum(
+                            max_data[mask_values_to_aggregate],
+                            data[mask_values_to_aggregate],
+                        )
+
+                if aggregation_strategy == "average":
+                    aggregated_data = np.divide(
+                        sum_data,
+                        valid_pixel_count,
+                        out=np.full_like(sum_data, output_band.GetNoDataValue()),
+                        where=(valid_pixel_count > 0),
+                    )
+                elif aggregation_strategy == "max":
+                    aggregated_data = max_data
+
+                aggregated_data[valid_pixel_count == 0] = output_band.GetNoDataValue()
 
                 output_band.WriteArray(aggregated_data, x, y)
 
@@ -602,22 +711,15 @@ class DatasetGenerator:
             / Path("aggregated")
             / Path(f"aggregated{get_extension('GTiff')}")
         )
-
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if data_info.get("aggregate_by", None) == "average":
-            operation = np.mean
-        elif data_info.get("aggregate_by", None) == "max":
-            operation = np.max
-        else:
-            raise ValueError(
-                f"Unknown aggregation strategy {data_info.get('aggregate_by', None)}!"
-            )
+        aggregation_strategy = data_info["aggregation_strategy"]
+        fill_values = data_info["fill_values"]
 
         first_dataset = gdal.Open(str(input_files[0]), gdal.GA_ReadOnly)
         xsize = first_dataset.RasterXSize
         ysize = first_dataset.RasterYSize
-        block_size = 2048
+        block_size = 8192
 
         output_driver = gdal.GetDriverByName("GTiff")
         output_dataset = output_driver.Create(
@@ -637,7 +739,11 @@ class DatasetGenerator:
                 x_block_size = min(block_size, xsize - x)
                 y_block_size = min(block_size, ysize - y)
 
-                aggregated_data = np.zeros(
+                sum_data = np.zeros((y_block_size, x_block_size), dtype=np.float32)
+                max_data = np.full(
+                    (y_block_size, x_block_size), -np.inf, dtype=np.float32
+                )
+                valid_pixel_count = np.zeros(
                     (y_block_size, x_block_size), dtype=np.float32
                 )
 
@@ -645,8 +751,34 @@ class DatasetGenerator:
                     dataset = gdal.Open(str(file), gdal.GA_ReadOnly)
                     band = dataset.GetRasterBand(1)
                     data = band.ReadAsArray(x, y, x_block_size, y_block_size)
-                    aggregated_data = operation([aggregated_data, data], axis=0)
+
+                    mask_values_to_ignore = np.isin(data, fill_values)
+                    mask_values_to_aggregate = np.logical_not(mask_values_to_ignore)
+                    valid_pixel_count[mask_values_to_aggregate] += 1
+
+                    if aggregation_strategy == "average":
+                        sum_data[mask_values_to_aggregate] += data[
+                            mask_values_to_aggregate
+                        ]
+                    elif aggregation_strategy == "max":
+                        max_data[mask_values_to_aggregate] = np.maximum(
+                            max_data[mask_values_to_aggregate],
+                            data[mask_values_to_aggregate],
+                        )
+
                     del dataset
+
+                if aggregation_strategy == "average":
+                    aggregated_data = np.divide(
+                        sum_data,
+                        valid_pixel_count,
+                        out=np.full_like(sum_data, output_band.GetNoDataValue()),
+                        where=(valid_pixel_count > 0),
+                    )
+                elif aggregation_strategy == "max":
+                    aggregated_data = max_data
+
+                aggregated_data[valid_pixel_count == 0] = output_band.GetNoDataValue()
 
                 output_band.WriteArray(aggregated_data, x, y)
 
@@ -674,7 +806,7 @@ class DatasetGenerator:
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.run_command(
-            f"gdalwarp -multi -of GTiff -overwrite {input_files} {str(output_file)}"
+            f"gdalwarp --quiet -multi -of GTiff -overwrite {input_files} {str(output_file)}"
         )
 
         return output_file

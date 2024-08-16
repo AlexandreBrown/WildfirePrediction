@@ -1,4 +1,4 @@
-debug: true
+debug: false
 periods:
   target_year_start_inclusive: 2023
   target_year_end_inclusive: 2023
@@ -21,86 +21,102 @@ paths:
   input_folder_path: "data/download/"
   output_folder_path: "data/datasets/"
 max_io_concurrency: 16
-max_cpu_concurrency: 10
+max_cpu_concurrency: 8
 log_to_file: true
 input_data:
     dynamic:
       era5_reanalysis_100m_u_component_of_wind:
         netcdf_layer: ""
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: []
         is_affected_by_fires: false
       era5_reanalysis_100m_v_component_of_wind:
         netcdf_layer: ""
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: []
         is_affected_by_fires: false
       era5_reanalysis_2m_temperature:
         netcdf_layer: ""
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: []
         is_affected_by_fires: false
       era5_reanalysis_potential_evaporation:
         netcdf_layer: ""
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: []
         is_affected_by_fires: false
       era5_reanalysis_surface_net_solar_radiation:
         netcdf_layer: ""
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: []
         is_affected_by_fires: false
       era5_reanalysis_surface_runoff:
         netcdf_layer: ""
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: []
         is_affected_by_fires: false
       era5_reanalysis_total_precipitation:
         netcdf_layer: ""
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: []
         is_affected_by_fires: false
       MOD13Q1_061__250m_16_days_NDVI:
         netcdf_layer: "_250m_16_days_NDVI"
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: [-3000]
         is_affected_by_fires: true
       MOD13Q1_061__250m_16_days_EVI:
         netcdf_layer: "_250m_16_days_EVI"
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: [-3000]
         is_affected_by_fires: true
       MOD44B_061_Percent_NonVegetated:
         netcdf_layer: "Percent_NonVegetated"
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: [200, 253]
         is_affected_by_fires: true
       MOD44B_061_Percent_NonTree_Vegetation:
         netcdf_layer: "Percent_NonTree_Vegetation"
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: [200, 253]
         is_affected_by_fires: true
       MOD44B_061_Percent_Tree_Cover:
         netcdf_layer: "Percent_Tree_Cover"
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: [200, 253]
         is_affected_by_fires: true
       MOD15A2H_061_Lai_500m:
         netcdf_layer: "Lai_500m"
-        aggregate_by: "average"
+        aggregation_strategy: "average"
         data_type: "continuous"
+        fill_values: [249, 250, 251, 252, 253, 254, 255]
         is_affected_by_fires: true
       MOD44W_061_water_mask:
         netcdf_layer: "water_mask"
-        aggregate_by: "max"
+        aggregation_strategy: "max"
         data_type: "categorical"
+        fill_values: [250, 253]
         is_affected_by_fires: true
       MOD14A2_061_FireMask:
         netcdf_layer: "FireMask"
-        aggregate_by: "max"
+        aggregation_strategy: "max"
         data_type: "categorical"
+        fill_values: [0]
         is_affected_by_fires: true
     static:
       SRTMGL3_NC_003_SRTMGL3_DEM:
         netcdf_layer: ""
         data_type: "continuous"
+        fill_values: []

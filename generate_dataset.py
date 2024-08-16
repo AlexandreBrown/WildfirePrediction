@@ -10,7 +10,7 @@ from data_sources.canada_boundary_data_source import CanadaBoundaryDataSource
 from grid.square_meters_grid import SquareMetersGrid
 from datasets.dataset_generator import DatasetGenerator
 from pathlib import Path
-from logs_formatting.formats import default_project_format
+from logging_utils.formats import default_project_format
 
 
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
