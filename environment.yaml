@@ -2,7 +2,7 @@ dependencies:
   - conda-forge::python=3.9
   - conda-forge::numpy=2.0.0
   - conda-forge::matplotlib=3.8.4
-  - conda-forge::gdal=3.9.1
+  - conda-forge::gdal=3.9.2
   - conda-forge::requests=2.32.3
   - conda-forge::geopandas=1.0.1
   - conda-forge::pyogrio=0.9.0
