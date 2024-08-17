@@ -33,12 +33,13 @@ sources:
                 - Percent_Tree_Cover
             - MOD15A2H.061:
                 - Lai_500m
-            - ASTWBD_ATTNC.001:
-                - ASTWBD_att
             - MOD14A2.061:
                 - FireMask
             - SRTMGL3_NC.003:
                 - SRTMGL3_DEM
+    gov_can:
+        - water_bodies
+
 logs:
     nasa_earth_data_logs_folder_path: "logs/download_data/20240711-081839/"
 outputs:

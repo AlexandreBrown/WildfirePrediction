@@ -47,8 +47,8 @@ Static input data is data that does not change over time or for which we only ha
 - [NASA Shuttle Radar Topography Mission Global 3 arc second](https://lpdaac.usgs.gov/products/srtmgl3v003/)
   - Elevation
 #### Water Bodies
-- [ASTER Global Water Bodies Database](https://lpdaac.usgs.gov/products/astwbdv001/)
-  - ASTWBD_att
+- [Atlas of Canada National Scale Data 1:1,000,000 - Waterbodies](https://open.canada.ca/data/en/dataset/e9931fc7-034c-52ad-91c5-6c64d4ba0065)
+  - Permanent Water Bodies
 
 ### Data Aggregation  
 - All the data that is not already yearly based is averaged to have a yearly temporal granularity.  
@@ -117,6 +117,7 @@ This will download the data based on your `config/download_data.yaml` configurat
 The current data sources that are supported are :  
 - era5
 - nasa_earth_data
+- gov_can
 
 ### Generate Dataset
 Once the raw data has been downloaded, the data needs to be processed because some data might be daily, some might be bi-weekly or monthly and some data sources might return tiles while some might return one file for the entire Canada.  
