@@ -135,21 +135,22 @@ class NasaEarthDataApi:
         month_start_inclusive: int,
         month_end_inclusive: int,
     ) -> list:
-        tasks_info_to_keep = []
+        loaded_tasks_info = []
 
         for task_info in tasks_info:
             if (
                 task_info["product"] in products
                 and task_info["layer"] in layers
-                and task_info["year"] >= year_start_inclusive
-                and task_info["year"] <= year_end_inclusive
-                and task_info["month"] >= month_start_inclusive
-                and task_info["month"] <= month_end_inclusive
+                and (task_info.get("year") is None or \
+                    (task_info["year"] >= year_start_inclusive
+                        and task_info["year"] <= year_end_inclusive \
+                            and task_info["month"] >= month_start_inclusive \
+                                and task_info["month"] <= month_end_inclusive))
             ):
-                tasks_info_to_keep.append(task_info)
+                loaded_tasks_info.append(task_info)
 
-        logger.info(f"Loaded {len(tasks_info_to_keep)} tasks from logs!")
-        return tasks_info_to_keep
+        logger.info(f"Loaded {len(loaded_tasks_info)} tasks from logs!")
+        return loaded_tasks_info
 
     def submit_tasks(
         self,
@@ -226,6 +227,7 @@ class NasaEarthDataApi:
                                 ),
                             }
                         ]
+                        logger.debug("Updated task params for static product!")
 
                     task_hash = self.hash_task(task)
                     logger.info(f"Task Hash: {task_hash}")
@@ -239,14 +241,23 @@ class NasaEarthDataApi:
                     task_id = self.submit_task(task)
 
                     tasks_hash[task_hash] = True
-                    task_info = {
-                        "task_id": task_id,
-                        "task_hash": task_hash,
-                        "product": product,
-                        "layer": layer,
-                        "year": year,
-                        "month": month,
-                    }
+                    
+                    if self.products[product]["TemporalGranularity"] == "Static":
+                        task_info = {
+                            "task_id": task_id,
+                            "task_hash": task_hash,
+                            "product": product,
+                            "layer": layer
+                        }
+                    else:
+                        task_info = {
+                            "task_id": task_id,
+                            "task_hash": task_hash,
+                            "product": product,
+                            "layer": layer,
+                            "year": year,
+                            "month": month,
+                        }
                     self.tasks_info.append(task_info)
 
                     self.save_tasks_info()
@@ -323,7 +334,7 @@ class NasaEarthDataApi:
         }
 
     def hash_task(self, task: dict) -> str:
-        return hashlib.md5(json.dumps(task).encode()).hexdigest()
+        return hashlib.md5(json.dumps(task, sort_keys=True).encode()).hexdigest()
 
     def submit_task(self, task: dict) -> str:
         max_attempts = 25
@@ -404,12 +415,13 @@ class NasaEarthDataApi:
         tasks_info_of_interest = []
         for task_info in self.tasks_info:
             if (
-                task_info["year"] >= year_start_inclusive
-                and task_info["year"] <= year_end_inclusive
-                and task_info["month"] >= month_start_inclusive
-                and task_info["month"] <= month_end_inclusive
-                and task_info["product"] in products_names
+                task_info["product"] in products_names
                 and task_info["layer"] in products_layers
+                and (task_info.get("year") is None or \
+                    (task_info["year"] >= year_start_inclusive
+                        and task_info["year"] <= year_end_inclusive \
+                            and task_info["month"] >= month_start_inclusive \
+                                and task_info["month"] <= month_end_inclusive))
             ):
                 tasks_info_of_interest.append(task_info)
 
@@ -423,7 +435,7 @@ class NasaEarthDataApi:
                     task_info, data_output_base_path, session
                 )
                 logger.info(
-                    f"Task {task_info['task_id']} {task_info['product']} {task_info['layer']} {task_info['year']} {task_info['month']} downloaded!"
+                    f"Task {task_info['task_id']} {task_info['product']} {task_info['layer']} {task_info.get('year')} {task_info.get('month')} downloaded!"
                 )
 
     async def download_task_files(
@@ -439,12 +451,11 @@ class NasaEarthDataApi:
         layer = (
             task_info["layer"].replace(".", "_").replace(" ", "_").replace("__", "_")
         )
-        year = task_info["year"]
-        month = task_info["month"]
-
         if self.products[task_info["product"]]["TemporalGranularity"] == "Static":
             output_path = data_output_base_path / "static_data" / f"{product}_{layer}"
         else:
+            year = task_info["year"]
+            month = task_info["month"]
             output_path = (
                 data_output_base_path / f"{year}" / f"{month}" / f"{product}_{layer}"
             )
