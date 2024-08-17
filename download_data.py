@@ -6,9 +6,10 @@ import shutil
 import asyncio
 import itertools
 import sys
+import time
 from loguru import logger
 from pathlib import Path
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from boundaries.canada_boundary import CanadaBoundary
 from data_sources.canada_boundary_data_source import CanadaBoundaryDataSource
 from data_sources.nasa_earth_data_api import NasaEarthDataApi
@@ -51,9 +52,19 @@ def download_era5_data(cfg: DictConfig):
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
 
-                era5_client.retrieve(
-                    cfg.sources.era5.dataset, era5_request_json, output_path.name
-                )
+                tries = 1
+                max_tries = 30
+                for _ in range(max_tries):
+                    try:
+                        era5_client.retrieve(
+                            cfg.sources.era5.dataset, era5_request_json, output_path.name
+                        )
+                        break
+                    except Exception as e:
+                        logger.error(f"Error: {e}")
+                        logger.error(f"Try {tries}/{max_tries}")
+                        tries += 1
+                        time.sleep(tries * 5)
 
                 shutil.move(output_path.name, output_path)
 
