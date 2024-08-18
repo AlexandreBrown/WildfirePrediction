@@ -2,6 +2,7 @@ import shutil
 import geopandas as gpd
 import uuid
 import subprocess
+import time
 import numpy as np
 import multiprocessing as mp
 from osgeo import gdal
@@ -447,7 +448,7 @@ class DatasetGenerator:
             bounds = tile["geometry"].bounds
             minx, miny, maxx, maxy = bounds
             self.run_command(
-                f"gdalwarp --quiet -multi -of GTiff -te {minx} {miny} {maxx} {maxy} {str(input_file)} {str(tile_output_file)}"
+                f"gdalwarp --quiet -overwrite -multi -of GTiff -te {minx} {miny} {maxx} {maxy} {str(input_file)} {str(tile_output_file)}"
             )
             tiles_paths.append(tile_output_file)
 
@@ -476,7 +477,7 @@ class DatasetGenerator:
         )
         resized_output_file_path.parent.mkdir(parents=True, exist_ok=True)
         self.run_command(
-            f"gdalwarp --quiet -multi -te {xmin} {ymin} {xmax} {ymax} -r {resampling_algorithm} -s_srs EPSG:{source_srid} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -of GTiff {str(input_file)} {str(resized_output_file_path)}"
+            f"gdalwarp --quiet -overwrite -multi -te {xmin} {ymin} {xmax} {ymax} -r {resampling_algorithm} -s_srs EPSG:{source_srid} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -of GTiff {str(input_file)} {str(resized_output_file_path)}"
         )
 
         clipped_ouput_file_path = (
@@ -487,7 +488,7 @@ class DatasetGenerator:
         clipped_ouput_file_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.run_command(
-            f"gdalwarp --quiet -multi -cutline_srs EPSG:{self.canada_boundary.target_epsg} -cutline {str(self.canada_boundary.boundary_file)} -crop_to_cutline -of GTiff {str(resized_output_file_path)} {str(clipped_ouput_file_path)}"
+            f"gdalwarp --quiet -overwrite -multi -cutline_srs EPSG:{self.canada_boundary.target_epsg} -cutline {str(self.canada_boundary.boundary_file)} -crop_to_cutline -of GTiff {str(resized_output_file_path)} {str(clipped_ouput_file_path)}"
         )
 
         self.cleanup_file(resized_output_file_path)
@@ -696,7 +697,7 @@ class DatasetGenerator:
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.run_command(
-            f"gdalwarp --quiet -multi -of GTiff -overwrite {input_files} {str(output_file)}"
+            f"gdalwarp --quiet -overwrite -multi -of GTiff {input_files} {str(output_file)}"
         )
 
         return output_file
@@ -869,8 +870,9 @@ class DatasetGenerator:
 
         vrt_file = output_file.with_suffix(".vrt")
 
-        gdalbuildvrt_cmd = f"gdalbuildvrt -separate {str(vrt_file)} " + " ".join(
-            files_to_stack
+        gdalbuildvrt_cmd = (
+            f"gdalbuildvrt -overwrite -separate {str(vrt_file)} "
+            + " ".join(files_to_stack)
         )
         gdalbuildvrt_cmd += " > /dev/null"
         self.run_command(gdalbuildvrt_cmd)
@@ -895,8 +897,18 @@ class DatasetGenerator:
         raise ValueError(f"Data name {data_name} not found in input data!")
 
     def run_command(self, command: str):
-        try:
-            subprocess.run(command, check=True, shell=True)
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Command failed: {e}")
-            raise e
+        tries = 1
+        max_tries = 15
+        for _ in range(max_tries):
+            try:
+                subprocess.run(command, check=True, shell=True)
+                return
+            except Exception as e:
+                logger.error(
+                    f"({tries}/{max_tries}) Command {command[:250]} failed: {e}, retrying..."
+                )
+                tries += 1
+                time.sleep(tries * 5)
+        exception_message = f"Command {command[:250]} failed after {tries} tries!"
+        logger.exception(exception_message)
+        raise Exception(exception_message)
