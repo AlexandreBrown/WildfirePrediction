@@ -874,11 +874,10 @@ class DatasetGenerator:
             f"gdalbuildvrt -overwrite -separate {str(vrt_file)} "
             + " ".join(files_to_stack)
         )
-        gdalbuildvrt_cmd += " > /dev/null"
         self.run_command(gdalbuildvrt_cmd)
 
         self.run_command(
-            f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)} > /dev/null"
+            f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)}"
         )
 
         vrt_file.unlink()
@@ -901,7 +900,7 @@ class DatasetGenerator:
         max_tries = 15
         for _ in range(max_tries):
             try:
-                subprocess.run(command, check=True, shell=True)
+                subprocess.run(command, check=True, shell=True, stdout=subprocess.DEVNULL)
                 return
             except Exception as e:
                 logger.error(
