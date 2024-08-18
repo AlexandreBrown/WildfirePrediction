@@ -259,6 +259,8 @@ class DatasetGenerator:
                     )
                 )
 
+                fill_values = self.get_fill_values(data_name)
+
                 for year in data_years_range:
                     if isinstance(years_index, list):
                         data_tiles_paths = years_index
@@ -267,6 +269,7 @@ class DatasetGenerator:
                     matching_tile_path = next(
                         filter(lambda path: path.stem == tile_name, data_tiles_paths)
                     )
+                    self.update_nodata_value(matching_tile_path, fill_values)
                     files_to_stack.append(str(matching_tile_path))
 
             self.stack_files(
@@ -274,6 +277,42 @@ class DatasetGenerator:
             )
 
         logger.complete()
+
+    def get_fill_values(self, data_name: str) -> list:
+        dynamic_data = self.config["input_data"].get("dynamic", {})
+        for name, data_info in dynamic_data.items():
+            if data_name == name:
+                return data_info.get("fill_values", [])
+
+        static_data = self.config["input_data"].get("static", {})
+        for name, data_info in static_data.items():
+            if data_name == name:
+                return data_info.get("fill_values", [])
+
+        raise ValueError(f"Data name {data_name} not found in input data!")
+
+    def update_nodata_value(self, file_path: Path, fill_values: list):
+        dataset = gdal.Open(str(file_path), gdal.GA_Update)
+
+        new_nodata_value = float(self.config["no_data_value"])
+
+        for band_index in range(1, dataset.RasterCount + 1):
+            band = dataset.GetRasterBand(band_index)
+            previous_nodata_value = band.GetNoDataValue()
+            combined_nodata_value_to_update = list(
+                set(fill_values + [previous_nodata_value])
+            )
+
+            band_data = band.ReadAsArray()
+
+            nodata_mask = np.isin(band_data, list(combined_nodata_value_to_update))
+            band_data[nodata_mask] = new_nodata_value
+            band.WriteArray(band_data)
+
+            band.SetNoDataValue(new_nodata_value)
+            dataset.FlushCache()
+
+        del dataset
 
     def stack_files(self, files_to_stack: list, output_folder: Path, tile_name: str):
         output_file = output_folder / f"{tile_name}{get_extension('gtiff')}"
@@ -290,28 +329,7 @@ class DatasetGenerator:
             f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)} > /dev/null"
         )
 
-        self.update_nodata_value(output_file)
-
         vrt_file.unlink()
-
-    def update_nodata_value(self, file_path: Path):
-        stacked_dataset = gdal.Open(str(file_path), gdal.GA_Update)
-
-        new_nodata_value = float(self.config["no_data_value"])
-
-        for band_index in range(1, stacked_dataset.RasterCount + 1):
-            band = stacked_dataset.GetRasterBand(band_index)
-            previous_nodata_value = band.GetNoDataValue()
-
-            if previous_nodata_value is not None:
-                band_data = band.ReadAsArray()
-                band_data[band_data == previous_nodata_value] = new_nodata_value
-                band.WriteArray(band_data)
-
-            band.SetNoDataValue(new_nodata_value)
-            stacked_dataset.FlushCache()
-
-        del stacked_dataset
 
     def get_is_affected_by_fires(self, data_name_to_lookup: str) -> bool:
         dynamic_data = self.config["input_data"].get("dynamic", {})
@@ -689,7 +707,9 @@ class DatasetGenerator:
                     band = input_dataset.GetRasterBand(i)
                     data = band.ReadAsArray(x, y, x_block_size, y_block_size)
 
-                    mask_values_to_ignore = np.isin(data, fill_values)
+                    mask_values_to_ignore = np.isin(
+                        data, list(set(fill_values + [band.GetNoDataValue()]))
+                    )
                     mask_values_to_aggregate = np.logical_not(mask_values_to_ignore)
                     valid_pixel_count[mask_values_to_aggregate] += 1
 
@@ -703,17 +723,16 @@ class DatasetGenerator:
                             data[mask_values_to_aggregate],
                         )
 
+                aggregated_data = np.full_like(
+                    valid_pixel_count, fill_value=output_band.GetNoDataValue()
+                )
                 if aggregation_strategy == "average":
-                    aggregated_data = np.divide(
-                        sum_data,
-                        valid_pixel_count,
-                        out=np.full_like(sum_data, output_band.GetNoDataValue()),
-                        where=(valid_pixel_count > 0),
+                    aggregated_data[valid_pixel_count > 0] = (
+                        sum_data[valid_pixel_count > 0]
+                        / valid_pixel_count[valid_pixel_count > 0]
                     )
                 elif aggregation_strategy == "max":
                     aggregated_data = max_data
-
-                aggregated_data[valid_pixel_count == 0] = output_band.GetNoDataValue()
 
                 output_band.WriteArray(aggregated_data, x, y)
 
@@ -773,7 +792,9 @@ class DatasetGenerator:
                     band = dataset.GetRasterBand(1)
                     data = band.ReadAsArray(x, y, x_block_size, y_block_size)
 
-                    mask_values_to_ignore = np.isin(data, fill_values)
+                    mask_values_to_ignore = np.isin(
+                        data, list(set(fill_values + [band.GetNoDataValue()]))
+                    )
                     mask_values_to_aggregate = np.logical_not(mask_values_to_ignore)
                     valid_pixel_count[mask_values_to_aggregate] += 1
 
@@ -789,17 +810,16 @@ class DatasetGenerator:
 
                     del dataset
 
+                aggregated_data = np.full_like(
+                    valid_pixel_count, fill_value=output_band.GetNoDataValue()
+                )
                 if aggregation_strategy == "average":
-                    aggregated_data = np.divide(
-                        sum_data,
-                        valid_pixel_count,
-                        out=np.full_like(sum_data, output_band.GetNoDataValue()),
-                        where=(valid_pixel_count > 0),
+                    aggregated_data[valid_pixel_count > 0] = (
+                        sum_data[valid_pixel_count > 0]
+                        / valid_pixel_count[valid_pixel_count > 0]
                     )
                 elif aggregation_strategy == "max":
                     aggregated_data = max_data
-
-                aggregated_data[valid_pixel_count == 0] = output_band.GetNoDataValue()
 
                 output_band.WriteArray(aggregated_data, x, y)
 
