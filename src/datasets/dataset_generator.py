@@ -1,3 +1,4 @@
+import shutil
 import geopandas as gpd
 import uuid
 import subprocess
@@ -73,10 +74,19 @@ class DatasetGenerator:
                 used=get_ram_used(),
                 total=get_ram_total(),
             )
+
+            self.cleanup_folder(tmp_folder_path)
+
             logger.success("Dataset generation DONE !")
         except BaseException as e:
             logger.error(f"Error: {e}")
             raise e
+
+    def cleanup_folder(self, folder_path: Path):
+        if self.debug:
+            return
+        logger.info(f"Cleaning up folder {folder_path}...")
+        shutil.rmtree(folder_path)
 
     async def generate_targets(
         self,
@@ -120,7 +130,7 @@ class DatasetGenerator:
 
                 logger.info("Resizing, reprojecting and clipping raster...")
                 data_type = "categorical"
-                resized_file_path = self.resize_reproject_clip_raster(
+                clipped_file_path = self.resize_reproject_clip_raster(
                     combined_raster_path,
                     tiles_preprocessing_output_folder,
                     data_type,
@@ -134,11 +144,12 @@ class DatasetGenerator:
                 )
                 years_range_output_folder_path.mkdir(parents=True, exist_ok=True)
                 self.create_tiles(
-                    resized_file_path,
+                    clipped_file_path,
                     years_range_output_folder_path,
                     big_tiles_boundaries,
                     create_child_folder=False,
                 )
+                self.cleanup_file(clipped_file_path)
 
         logger.info("Generating targets DONE !")
 
@@ -294,6 +305,7 @@ class DatasetGenerator:
                                 used=get_ram_used(),
                                 total=get_ram_total(),
                             )
+                            self.cleanup_file(merged_file_path)
                             months_files_paths.append(month_aggregated_file_path)
 
                     year_output_folder = (
@@ -310,10 +322,11 @@ class DatasetGenerator:
                         used=get_ram_used(),
                         total=get_ram_total(),
                     )
+                    self.cleanup_files(months_files_paths)
 
                     logger.info("Resizing, reprojecting and clipping raster...")
                     data_type = data_info.get("data_type", None)
-                    resized_file_path = self.resize_reproject_clip_raster(
+                    clipped_file_path = self.resize_reproject_clip_raster(
                         yearly_aggregated_file_path,
                         year_output_folder,
                         data_type,
@@ -324,16 +337,27 @@ class DatasetGenerator:
                         used=get_ram_used(),
                         total=get_ram_total(),
                     )
+                    self.cleanup_file(yearly_aggregated_file_path)
 
                     logger.info("Creating tiles...")
                     tiles_files_paths = self.create_tiles(
-                        resized_file_path, year_output_folder, big_tiles_boundaries
+                        clipped_file_path, year_output_folder, big_tiles_boundaries
                     )
                     if data_name not in data_years_index.keys():
                         data_years_index[data_name] = {}
                     data_years_index[data_name][year] = tiles_files_paths
+                    self.cleanup_file(clipped_file_path)
         logger.complete()
         return data_years_index
+
+    def cleanup_files(self, files: list):
+        for file in files:
+            self.cleanup_file(file)
+
+    def cleanup_file(self, file: Path):
+        if self.debug:
+            return
+        file.unlink()
 
     def process_static_input_data(
         self,
@@ -373,7 +397,7 @@ class DatasetGenerator:
 
             logger.info("Resizing, reprojecting and clipping raster...")
             data_type = "categorical"
-            resized_file_path = self.resize_reproject_clip_raster(
+            clipped_file_path = self.resize_reproject_clip_raster(
                 merged_file_path,
                 static_output_folder_path,
                 data_type,
@@ -384,11 +408,13 @@ class DatasetGenerator:
                 used=get_ram_used(),
                 total=get_ram_total(),
             )
+            self.cleanup_file(merged_file_path)
 
             logger.info("Creating tiles...")
             tiles_files_paths = self.create_tiles(
-                resized_file_path, static_output_folder_path, big_tiles_boundaries
+                clipped_file_path, static_output_folder_path, big_tiles_boundaries
             )
+            self.cleanup_file(clipped_file_path)
 
         logger.opt(lazy=True).debug(
             "RAM Usage: {used:.2f}/{total:.2f}",
@@ -463,6 +489,8 @@ class DatasetGenerator:
         self.run_command(
             f"gdalwarp --quiet -multi -cutline_srs EPSG:{self.canada_boundary.target_epsg} -cutline {str(self.canada_boundary.boundary_file)} -crop_to_cutline -of GTiff {str(resized_output_file_path)} {str(clipped_ouput_file_path)}"
         )
+
+        self.cleanup_file(resized_output_file_path)
 
         return clipped_ouput_file_path
 
@@ -712,6 +740,13 @@ class DatasetGenerator:
         nb_processes = min(self.max_cpu_concurrency, len(args))
         with mp.Pool(processes=nb_processes) as pool:
             pool.starmap(self.stack_input_data_for_years_range, args)
+
+        for data_name, years_index_or_files_paths in input_data_index.items():
+            if isinstance(years_index_or_files_paths, dict):
+                for year, tiles_paths in years_index_or_files_paths.items():
+                    self.cleanup_files(tiles_paths)
+            else:
+                self.cleanup_files(years_index_or_files_paths)
 
     def stack_input_data_for_years_range(
         self,
