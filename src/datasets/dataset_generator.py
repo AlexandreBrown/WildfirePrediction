@@ -191,206 +191,52 @@ class DatasetGenerator:
         big_tiles_boundaries: gpd.GeoDataFrame,
         target_years_ranges: list,
     ):
-        input_data_index = self.process_dynamic_input_data(
-            tmp_folder_path, big_tiles_boundaries
-        )
-        self.process_static_input_data(
-            tmp_folder_path, big_tiles_boundaries, input_data_index
-        )
-        self.stack_input_data(
-            dataset_folder_path,
-            target_years_ranges,
-            input_data_index,
-        )
-        return input_data_index
-
-    def stack_input_data(
-        self,
-        output_folder_path: Path,
-        target_years_ranges: list,
-        input_data_index: dict,
-    ):
-        args = [
-            (output_folder_path, target_years_range, input_data_index)
-            for target_years_range in target_years_ranges
-        ]
-        nb_processes = min(self.max_cpu_concurrency, len(args))
-        with mp.Pool(processes=nb_processes) as pool:
-            pool.starmap(self.stack_input_data_for_years_range, args)
-
-    def stack_input_data_for_years_range(
-        self,
-        output_folder_path: Path,
-        target_years_range: range,
-        input_data_index: dict,
-    ):
-        logger.info(f"Stacking data for target years range {target_years_range}...")
-        logger.opt(lazy=True).debug(
-            "RAM Usage: {used:.2f}/{total:.2f}",
-            used=get_ram_used(),
-            total=get_ram_total(),
-        )
-        target_years_range_output_folder = (
-            output_folder_path
-            / Path("input_data")
-            / Path(f"{target_years_range[0]}_{target_years_range[-1]}")
-        )
-        target_years_range_output_folder.mkdir(parents=True, exist_ok=True)
-
-        first_data_values = list(input_data_index.values())[0]
-
-        if isinstance(first_data_values, list):
-            tiles = [file_path.stem for file_path in first_data_values]
-        else:
-            tiles = [
-                file_path.stem for file_path in list(first_data_values.values())[0]
-            ]
-
-        for tile_name in tiles:
-
-            files_to_stack = []
-
-            for data_name, years_index in input_data_index.items():
-                is_affected_by_fires = self.get_is_affected_by_fires(data_name)
-
-                data_years_range = (
-                    self.get_dynamic_input_data_years_range_for_target_years_range(
-                        target_years_range, is_affected_by_fires
-                    )
-                )
-
-                fill_values = self.get_fill_values(data_name)
-
-                for year in data_years_range:
-                    if isinstance(years_index, list):
-                        data_tiles_paths = years_index
-                    else:
-                        data_tiles_paths = list(years_index[year])
-                    matching_tile_path = next(
-                        filter(lambda path: path.stem == tile_name, data_tiles_paths)
-                    )
-                    self.update_nodata_value(matching_tile_path, fill_values)
-                    files_to_stack.append(str(matching_tile_path))
-
-            self.stack_files(
-                files_to_stack, target_years_range_output_folder, tile_name
-            )
-
-        logger.complete()
-
-    def get_fill_values(self, data_name: str) -> list:
         dynamic_data = self.config["input_data"].get("dynamic", {})
-        for name, data_info in dynamic_data.items():
-            if data_name == name:
-                return data_info.get("fill_values", [])
-
-        static_data = self.config["input_data"].get("static", {})
-        for name, data_info in static_data.items():
-            if data_name == name:
-                return data_info.get("fill_values", [])
-
-        raise ValueError(f"Data name {data_name} not found in input data!")
-
-    def update_nodata_value(self, file_path: Path, fill_values: list):
-        dataset = gdal.Open(str(file_path), gdal.GA_Update)
-
-        new_nodata_value = float(self.config["no_data_value"])
-
-        for band_index in range(1, dataset.RasterCount + 1):
-            band = dataset.GetRasterBand(band_index)
-            previous_nodata_value = band.GetNoDataValue()
-            combined_nodata_value_to_update = list(
-                set(fill_values + [previous_nodata_value])
+        dynamic_input_data_args = [
+            (
+                self.process_dynamic_input_data,
+                tmp_folder_path,
+                data_name,
+                data_info,
+                big_tiles_boundaries,
             )
-
-            band_data = band.ReadAsArray()
-
-            nodata_mask = np.isin(band_data, list(combined_nodata_value_to_update))
-            band_data[nodata_mask] = new_nodata_value
-            band.WriteArray(band_data)
-
-            band.SetNoDataValue(new_nodata_value)
-            dataset.FlushCache()
-
-        del dataset
-
-    def stack_files(self, files_to_stack: list, output_folder: Path, tile_name: str):
-        output_file = output_folder / f"{tile_name}{get_extension('gtiff')}"
-
-        vrt_file = output_file.with_suffix(".vrt")
-
-        gdalbuildvrt_cmd = f"gdalbuildvrt -separate {str(vrt_file)} " + " ".join(
-            files_to_stack
-        )
-        gdalbuildvrt_cmd += " > /dev/null"
-        self.run_command(gdalbuildvrt_cmd)
-
-        self.run_command(
-            f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)} > /dev/null"
-        )
-
-        vrt_file.unlink()
-
-    def get_is_affected_by_fires(self, data_name_to_lookup: str) -> bool:
-        dynamic_data = self.config["input_data"].get("dynamic", {})
-        for data_name, data_info in dynamic_data.items():
-            if data_name_to_lookup == data_name:
-                return data_info.get("is_affected_by_fires", False)
-
-        static_data = self.config["input_data"].get("static", {})
-        for data_name, data_info in static_data.items():
-            if data_name_to_lookup == data_name:
-                return False
-
-        raise ValueError(f"Data name {data_name} not found in input data!")
-
-    def get_dynamic_input_data_years_range_for_target_years_range(
-        self,
-        target_years_range: range,
-        is_affected_by_fires: bool,
-    ) -> range:
-        if is_affected_by_fires:
-            year_start_inclusive = (
-                target_years_range[0]
-                - self.config["periods"][
-                    "input_data_affected_by_fires_period_length_in_years"
-                ]
-            )
-
-            year_end_inclusive = target_years_range[0] - 1
-        else:
-            year_start_inclusive = target_years_range[0]
-            year_end_inclusive = target_years_range[-1]
-
-        return range(year_start_inclusive, year_end_inclusive + 1)
-
-    def process_dynamic_input_data(
-        self, output_folder_path: Path, big_tiles_boundaries: gpd.GeoDataFrame
-    ) -> dict:
-        input_data_index = {}
-
-        dynamic_data = self.config["input_data"].get("dynamic", {})
-        args = [
-            (output_folder_path, data_name, data_info, big_tiles_boundaries)
             for data_name, data_info in dynamic_data.items()
         ]
 
-        if len(args) == 0:
-            return input_data_index
+        static_data = self.config["input_data"].get("static", {})
+        static_input_data_args = [
+            (
+                self.process_static_input_data,
+                tmp_folder_path,
+                data_name,
+                data_info,
+                big_tiles_boundaries,
+            )
+            for data_name, data_info in static_data.items()
+        ]
 
+        args = dynamic_input_data_args + static_input_data_args
+
+        data_index = {}
         nb_processes = min(self.max_cpu_concurrency, len(args))
         with mp.Pool(processes=nb_processes) as pool:
-            input_data_years_indexes = pool.starmap(
-                self.process_dynamic_input_data_years, args
-            )
+            input_data_indexes = pool.starmap(self._process_input_data, args)
 
-        for input_data_years_index in input_data_years_indexes:
-            for data_name, years_index in input_data_years_index.items():
-                input_data_index[data_name] = years_index
+        for input_data_index in input_data_indexes:
+            for data_name, years_index_or_files_paths in input_data_index.items():
+                data_index[data_name] = years_index_or_files_paths
 
-        return input_data_index
+        self.stack_input_data(
+            dataset_folder_path,
+            target_years_ranges,
+            data_index,
+        )
 
-    def process_dynamic_input_data_years(
+    def _process_input_data(self, *args):
+        processing_fn = args[0]
+        return processing_fn(*args[1:])
+
+    def process_dynamic_input_data(
         self,
         output_folder_path: Path,
         data_name: str,
@@ -490,31 +336,6 @@ class DatasetGenerator:
         return data_years_index
 
     def process_static_input_data(
-        self,
-        output_folder_path: Path,
-        big_tiles_boundaries: gpd.GeoDataFrame,
-        input_data_index: dict,
-    ):
-        static_data = self.config["input_data"].get("static", {})
-        args = [
-            (output_folder_path, data_name, data_info, big_tiles_boundaries)
-            for data_name, data_info in static_data.items()
-        ]
-
-        if len(args) == 0:
-            return
-
-        nb_processes = min(self.max_cpu_concurrency, len(args))
-        with mp.Pool(processes=nb_processes) as pool:
-            inputs_data_files_paths = pool.starmap(
-                self.process_static_input_data_layer, args
-            )
-
-        for input_data_files_paths in inputs_data_files_paths:
-            for data_name, files_paths in input_data_files_paths.items():
-                input_data_index[data_name] = files_paths
-
-    def process_static_input_data_layer(
         self,
         output_folder_path: Path,
         data_name: str,
@@ -877,6 +698,166 @@ class DatasetGenerator:
             year_end_inclusive = self.config["periods"]["target_year_end_inclusive"]
 
         return range(year_start_inclusive, year_end_inclusive + 1)
+
+    def stack_input_data(
+        self,
+        output_folder_path: Path,
+        target_years_ranges: list,
+        input_data_index: dict,
+    ):
+        args = [
+            (output_folder_path, target_years_range, input_data_index)
+            for target_years_range in target_years_ranges
+        ]
+        nb_processes = min(self.max_cpu_concurrency, len(args))
+        with mp.Pool(processes=nb_processes) as pool:
+            pool.starmap(self.stack_input_data_for_years_range, args)
+
+    def stack_input_data_for_years_range(
+        self,
+        output_folder_path: Path,
+        target_years_range: range,
+        input_data_index: dict,
+    ):
+        logger.info(f"Stacking data for target years range {target_years_range}...")
+        logger.opt(lazy=True).debug(
+            "RAM Usage: {used:.2f}/{total:.2f}",
+            used=get_ram_used(),
+            total=get_ram_total(),
+        )
+        target_years_range_output_folder = (
+            output_folder_path
+            / Path("input_data")
+            / Path(f"{target_years_range[0]}_{target_years_range[-1]}")
+        )
+        target_years_range_output_folder.mkdir(parents=True, exist_ok=True)
+
+        first_data_values = list(input_data_index.values())[0]
+
+        if isinstance(first_data_values, list):
+            tiles = [file_path.stem for file_path in first_data_values]
+        else:
+            tiles = [
+                file_path.stem for file_path in list(first_data_values.values())[0]
+            ]
+
+        for tile_name in tiles:
+
+            files_to_stack = []
+
+            for data_name, years_index in input_data_index.items():
+                is_affected_by_fires = self.get_is_affected_by_fires(data_name)
+
+                data_years_range = (
+                    self.get_dynamic_input_data_years_range_for_target_years_range(
+                        target_years_range, is_affected_by_fires
+                    )
+                )
+
+                fill_values = self.get_fill_values(data_name)
+
+                for year in data_years_range:
+                    if isinstance(years_index, list):
+                        data_tiles_paths = years_index
+                    else:
+                        data_tiles_paths = list(years_index[year])
+                    matching_tile_path = next(
+                        filter(lambda path: path.stem == tile_name, data_tiles_paths)
+                    )
+                    self.update_nodata_value(matching_tile_path, fill_values)
+                    files_to_stack.append(str(matching_tile_path))
+
+            self.stack_files(
+                files_to_stack, target_years_range_output_folder, tile_name
+            )
+
+        logger.complete()
+
+    def get_dynamic_input_data_years_range_for_target_years_range(
+        self,
+        target_years_range: range,
+        is_affected_by_fires: bool,
+    ) -> range:
+        if is_affected_by_fires:
+            year_start_inclusive = (
+                target_years_range[0]
+                - self.config["periods"][
+                    "input_data_affected_by_fires_period_length_in_years"
+                ]
+            )
+
+            year_end_inclusive = target_years_range[0] - 1
+        else:
+            year_start_inclusive = target_years_range[0]
+            year_end_inclusive = target_years_range[-1]
+
+        return range(year_start_inclusive, year_end_inclusive + 1)
+
+    def get_fill_values(self, data_name: str) -> list:
+        dynamic_data = self.config["input_data"].get("dynamic", {})
+        for name, data_info in dynamic_data.items():
+            if data_name == name:
+                return data_info.get("fill_values", [])
+
+        static_data = self.config["input_data"].get("static", {})
+        for name, data_info in static_data.items():
+            if data_name == name:
+                return data_info.get("fill_values", [])
+
+        raise ValueError(f"Data name {data_name} not found in input data!")
+
+    def update_nodata_value(self, file_path: Path, fill_values: list):
+        dataset = gdal.Open(str(file_path), gdal.GA_Update)
+
+        new_nodata_value = float(self.config["no_data_value"])
+
+        for band_index in range(1, dataset.RasterCount + 1):
+            band = dataset.GetRasterBand(band_index)
+            previous_nodata_value = band.GetNoDataValue()
+            combined_nodata_value_to_update = list(
+                set(fill_values + [previous_nodata_value])
+            )
+
+            band_data = band.ReadAsArray()
+
+            nodata_mask = np.isin(band_data, list(combined_nodata_value_to_update))
+            band_data[nodata_mask] = new_nodata_value
+            band.WriteArray(band_data)
+
+            band.SetNoDataValue(new_nodata_value)
+            dataset.FlushCache()
+
+        del dataset
+
+    def stack_files(self, files_to_stack: list, output_folder: Path, tile_name: str):
+        output_file = output_folder / f"{tile_name}{get_extension('gtiff')}"
+
+        vrt_file = output_file.with_suffix(".vrt")
+
+        gdalbuildvrt_cmd = f"gdalbuildvrt -separate {str(vrt_file)} " + " ".join(
+            files_to_stack
+        )
+        gdalbuildvrt_cmd += " > /dev/null"
+        self.run_command(gdalbuildvrt_cmd)
+
+        self.run_command(
+            f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)} > /dev/null"
+        )
+
+        vrt_file.unlink()
+
+    def get_is_affected_by_fires(self, data_name_to_lookup: str) -> bool:
+        dynamic_data = self.config["input_data"].get("dynamic", {})
+        for data_name, data_info in dynamic_data.items():
+            if data_name_to_lookup == data_name:
+                return data_info.get("is_affected_by_fires", False)
+
+        static_data = self.config["input_data"].get("static", {})
+        for data_name, data_info in static_data.items():
+            if data_name_to_lookup == data_name:
+                return False
+
+        raise ValueError(f"Data name {data_name} not found in input data!")
 
     def run_command(self, command: str):
         try:

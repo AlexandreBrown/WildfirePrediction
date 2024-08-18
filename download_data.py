@@ -62,7 +62,9 @@ def download_era5_data(cfg: DictConfig):
                 for _ in range(max_tries):
                     try:
                         era5_client.retrieve(
-                            cfg.sources.era5.dataset, era5_request_json, output_path.name
+                            cfg.sources.era5.dataset,
+                            era5_request_json,
+                            output_path.name,
                         )
                         break
                     except Exception as e:
@@ -190,8 +192,8 @@ def download_gov_can_water_bodies(cfg: DictConfig):
         tmp_raster_path = Path(tmpdirname) / f"water_bodies{get_extension('gtiff')}"
 
         pixel_size = int(cfg.grid.pixel_size_in_meters)
-        
-        rasterize_command = f"gdal_rasterize -l AC_1M_Waterbodies -a FEAT_LEVEL -a_srs EPSG:{water_bodies_srid} -tr {pixel_size} {pixel_size} -init 0.0 -a_nodata -99999.0 -te {xmin} {ymin} {xmax} {ymax} -ot Float32 {str(water_bodies_shp_file)} {str(tmp_raster_path)}"
+
+        rasterize_command = f"gdal_rasterize -l AC_1M_Waterbodies -a FEAT_LEVEL -a_srs EPSG:{water_bodies_srid} -tr {pixel_size} {pixel_size} -init 0.0 -a_nodata -32768.0 -te {xmin} {ymin} {xmax} {ymax} -ot Float32 {str(water_bodies_shp_file)} {str(tmp_raster_path)}"
 
         output_raster_path = (
             Path(cfg.outputs.data_output_base_path)
@@ -207,18 +209,18 @@ def download_gov_can_water_bodies(cfg: DictConfig):
                 shell=True,
                 check=True,
             )
-            
+
             target_srid = 4326
-            
+
             logger.info(f"Reprojecting Gov CAN Water Bodies to EPSG:{target_srid}...")
-            
+
             reproject_command = f"gdalwarp --quiet -t_srs EPSG:{target_srid} {str(tmp_raster_path)} {str(output_raster_path)}"
             subprocess.run(
                 reproject_command,
                 shell=True,
                 check=True,
             )
-            
+
         except Exception as e:
             logger.error(f"Error when running command: {rasterize_command}")
             raise e
