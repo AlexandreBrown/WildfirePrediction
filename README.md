@@ -138,7 +138,7 @@ So each big tile represents the data inputs stacked for 1 year for the area deli
     python -m generate_dataset
     ```
 
-### Training
+### Split Dataset
 1. Add the repo source code to the python path (make sure you are at the root of the repository) :  
     ```bash
     export PYTHONPATH=$(pwd)/src
@@ -147,15 +147,32 @@ So each big tile represents the data inputs stacked for 1 year for the area deli
     ```shell
     export PROJ_LIB="$CONDA_PREFIX/share/proj/"
     ```
-1. Update the train config to specify where the data is :  
+1. Update the config to specify where the data is :  
     - Set `data.input_data_periods_folders_paths` to a list of string corresponding to the paths to the folder for the range of the input data (eg: '.../2023_2023').  
       - This list is the list of all the periods (not just train).
     - Do the same for `data.target_periods_folders_paths`
 
 1. Run the train script :  
     ```shell
+    python -m split_dataset
+    ```
+  
+Note : The script will generate a json file called `data_split_info.json` under the output directory of the data split. This file is used by the training script to load the data so take note of its location.
+
+### Training
+1. Add the repo source code to the python path (make sure you are at the root of the repository) :  
+    ```bash
+    export PYTHONPATH=$(pwd)/src
+    ```
+1. Update the config to specify where the data_split_info file is :  
+    - Set `data.split_info_file_path` to a string representing the path of the json file.
+
+1. Run the train script :  
+    ```shell
     python -m train
     ```
+  
+Note : The script outputs training results under the output folder.
 
 # Contributing  
 1. Follow the [prerequisites](#prerequisites) steps.

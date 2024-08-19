@@ -1,6 +1,7 @@
 import torch
 import subprocess
 import multiprocessing as mp
+import os
 from loguru import logger
 from osgeo import gdal
 from pathlib import Path
@@ -17,43 +18,65 @@ from transforms.replace_value_transform import ReplaceValueTransform
 class WildfireDataModule:
     def __init__(
         self,
-        input_data_periods_folders_paths: list,
-        input_data_indexes_to_remove: list,
-        target_periods_folders_paths: list,
-        train_periods: list,
-        output_folder_path: Path,
+        input_data_indexes_to_remove: list = [],
         seed: int = 42,
         train_batch_size: int = 4,
         eval_batch_size: int = 8,
-        val_split: Optional[float] = None,
         model_input_size: int = 256,
-        num_workers: int = 4,
         source_no_data_value: float = -32768.0,
         destination_no_data_value: float = -32768.0,
+        input_data_periods_folders_paths: Optional[list] = None,
+        target_periods_folders_paths: Optional[list] = None,
+        train_periods: Optional[list] = None,
+        val_split: Optional[float] = None,
+        preprocessing_num_workers: int = 4,
+        output_folder_path: Optional[Path] = None,
+        train_folder_path: Optional[Path] = None,
+        val_folder_path: Optional[Path] = None,
+        test_folder_path: Optional[Path] = None,
         train_stats: Optional[dict] = None,
+        data_loading_num_workers: int = 4,
     ):
-        self.input_data_periods_folders_paths = input_data_periods_folders_paths
+        gdal.UseExceptions()
         self.input_data_indexes_to_remove = input_data_indexes_to_remove
-        self.target_periods_folders_paths = target_periods_folders_paths
-        self.train_periods = train_periods
         self.seed = seed
         self.train_batch_size = train_batch_size
         self.eval_batch_size = eval_batch_size
-        self.val_split = val_split
         self.model_input_size = model_input_size
-        self.num_workers = num_workers
+        self.preprocessing_num_workers = preprocessing_num_workers
         self.source_no_data_value = source_no_data_value
         self.destination_no_data_value = destination_no_data_value
         self.train_stats = train_stats
         self.generator = torch.Generator().manual_seed(seed)
         self.output_folder_path = output_folder_path
-        self.output_folder_path.mkdir(parents=True, exist_ok=True)
+        self.input_data_periods_folders_paths = input_data_periods_folders_paths
+        self.target_periods_folders_paths = target_periods_folders_paths
+        self.train_periods = train_periods
+        self.val_split = val_split
+        self.train_folder_path = train_folder_path
+        self.val_folder_path = val_folder_path
+        self.test_folder_path = test_folder_path
+        self.data_loading_num_workers = data_loading_num_workers
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+        self.input_folder_name = "input"
+        self.target_folder_name = "target"
 
-    def setup(self, stage: str):
-        logger.info(f"Setting up data module [Stage={stage}]...")
+    def split_data(self) -> dict:
+        assert self.input_data_periods_folders_paths is not None
+        assert self.target_periods_folders_paths is not None
+        assert self.train_periods is not None and len(self.train_periods) > 0
+        assert self.output_folder_path is not None
+
+        logger.info("Splitting data...")
+        self.output_folder_path.mkdir(parents=True, exist_ok=True)
+        self.val_folder_path = self.output_folder_path / "val"
+        self.val_folder_path.mkdir(parents=True, exist_ok=True)
+        self.train_folder_path = self.output_folder_path / "train"
+        self.train_folder_path.mkdir(parents=True, exist_ok=True)
+        self.test_folder_path = self.output_folder_path / "test"
+        self.test_folder_path.mkdir(parents=True, exist_ok=True)
 
         (
             train_input_data_folders_paths,
@@ -67,68 +90,59 @@ class WildfireDataModule:
         logger.info(f"Test input data folders: {len(test_input_data_folders_paths)}")
         logger.info(f"Test target folders: {len(test_target_folders_paths)}")
 
-        if stage == "fit":
-            train_input_files = self.get_files(train_input_data_folders_paths)
-            logger.info(f"Train input files: {len(train_input_files)}")
-            train_target_files = self.get_files(train_target_folders_paths)
-            logger.info(f"Train target files: {len(train_target_files)}")
-
-            stats = ImageStats()
-            logger.info("Computing training statistics...")
-            self.train_stats = stats.compute_aggregated_files_stats(train_input_files)
-            logger.info("Computed training statistics!")
-
-            if self.val_split is not None and self.val_split > 0.0:
-                logger.info(
-                    "Splitting train dataset into train and validation datasets..."
-                )
-                (
-                    train_input_files,
-                    val_input_files,
-                    train_target_files,
-                    val_target_files,
-                ) = train_test_split(
-                    sorted(train_input_files),
-                    sorted(train_target_files),
-                    test_size=self.val_split,
-                    random_state=self.seed,
-                )
-                logger.info(f"Train input files: {len(train_input_files)}")
-                logger.info(f"Validation input files: {len(val_input_files)}")
-                logger.info("Creating validation dataset...")
-                val_transform = self.get_eval_transform()
-                self.val_dataset = self.create_dataset(
-                    val_input_files,
-                    val_target_files,
-                    output_folder_name="val",
-                    transform=val_transform,
-                )
-
-            logger.info("Creating train dataset...")
-            train_transform = self.get_train_transform()
-            self.train_dataset = self.create_dataset(
-                train_input_files,
-                train_target_files,
-                output_folder_name="train",
-                transform=train_transform,
-            )
+        train_input_files = self.get_files(train_input_data_folders_paths)
+        logger.info(f"Train input files: {len(train_input_files)}")
+        train_target_files = self.get_files(train_target_folders_paths)
+        logger.info(f"Train target files: {len(train_target_files)}")
 
         test_input_files = self.get_files(test_input_data_folders_paths)
-        test_target_files = self.get_files(test_target_folders_paths)
-        if len(test_input_files) == 0:
-            return
-
         logger.info(f"Test input files: {len(test_input_files)}")
-        logger.info("Creating test dataset...")
-        test_transform = self.get_eval_transform()
-        self.test_dataset = self.create_dataset(
-            test_input_files,
-            test_target_files,
-            output_folder_name="test",
-            transform=test_transform,
+        test_target_files = self.get_files(test_target_folders_paths)
+        logger.info(f"Test target files: {len(test_target_files)}")
+
+        if self.val_split is not None and self.val_split > 0.0:
+            logger.info("Splitting train dataset into train and validation datasets...")
+            (
+                train_input_files,
+                val_input_files,
+                train_target_files,
+                val_target_files,
+            ) = train_test_split(
+                sorted(train_input_files),
+                sorted(train_target_files),
+                test_size=self.val_split,
+                random_state=self.seed,
+            )
+            logger.info(f"Train input files: {len(train_input_files)}")
+            logger.info(f"Validation input files: {len(val_input_files)}")
+            logger.info("Preprocessing validation files...")
+            self.preprocess_tiles(
+                self.val_folder_path, val_input_files, val_target_files
+            )
+
+        logger.info("Preprocessing train files...")
+        self.preprocess_tiles(
+            self.train_folder_path, train_input_files, train_target_files
         )
 
-        logger.success(f"Data module setup completed [Stage={stage}]!")
+        logger.info("Computing training statistics...")
+        stats = ImageStats()
+        self.train_stats = stats.compute_aggregated_files_stats(train_input_files)
+        logger.info("Computed training statistics!")
+
+        logger.info("Preprocessing test files...")
+        self.preprocess_tiles(
+            self.test_folder_path, test_input_files, test_target_files
+        )
+
+        logger.success("Data split completed!")
+
+        return {
+            "train_folder_path": str(self.train_folder_path),
+            "val_folder_path": str(self.val_folder_path),
+            "test_folder_path": str(self.test_folder_path),
+            "train_stats": self.train_stats,
+        }
 
     def get_train_test_folders_paths(self) -> tuple:
         train_input_data_folders_paths = set()
@@ -163,6 +177,82 @@ class WildfireDataModule:
             test_targets_folders_paths,
         )
 
+    def preprocess_tiles(
+        self, output_folder: Path, input_files: list, target_files: list
+    ):
+        input_data_folder = output_folder / self.input_folder_name
+        input_data_folder.mkdir(parents=True)
+
+        target_folder = output_folder / self.target_folder_name
+        target_folder.mkdir()
+
+        self.create_tiles_sized_for_model(
+            input_files, input_data_folder, output_type="Float32"
+        )
+        self.create_tiles_sized_for_model(
+            target_files, target_folder, output_type="Byte"
+        )
+
+    def create_tiles_sized_for_model(
+        self, files: list, output_folder: Path, output_type: str
+    ):
+        if len(files) == 0:
+            return
+
+        tile_size_in_pixels = self.model_input_size
+
+        args = [
+            (file, output_folder, tile_size_in_pixels, output_type) for file in files
+        ]
+
+        nb_processes = min(
+            min(
+                max(1, len(os.sched_getaffinity(0)) - 1), self.preprocessing_num_workers
+            ),
+            len(files),
+        )
+        with mp.Pool(processes=nb_processes) as pool:
+            pool.starmap(self.create_tile_sized_for_model, args)
+
+    def create_tile_sized_for_model(
+        self,
+        file: Path,
+        output_folder: Path,
+        tile_size_in_pixels: int,
+        output_type: str,
+    ):
+        dataset = gdal.Open(str(file), gdal.GA_ReadOnly)
+        width = dataset.RasterXSize
+        height = dataset.RasterYSize
+
+        number_of_tiles_horizontally = width // tile_size_in_pixels
+        number_of_tiles_vertically = height // tile_size_in_pixels
+
+        for x in range(number_of_tiles_horizontally):
+            for y in range(number_of_tiles_vertically):
+                pixels_x_offset = x * tile_size_in_pixels
+                pixels_y_offset = y * tile_size_in_pixels
+                extension = get_extension("gtiff")
+                tile_output_file_path = (
+                    output_folder / f"{file.parent.stem}_{file.stem}_{x}_{y}{extension}"
+                )
+
+                cmd = [
+                    "gdal_translate",
+                    "-strict",
+                    "-ot",
+                    output_type,
+                    "-srcwin",
+                    str(pixels_x_offset),
+                    str(pixels_y_offset),
+                    str(tile_size_in_pixels),
+                    str(tile_size_in_pixels),
+                    str(file),
+                    str(tile_output_file_path),
+                ]
+
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+
     def get_files(self, folders: list) -> list:
         files = []
 
@@ -172,7 +262,30 @@ class WildfireDataModule:
 
         return sorted(files)
 
+    def setup(self):
+        logger.info("Setting up data module...")
+
+        logger.info("Creating train dataset...")
+        train_transform = self.get_train_transform()
+        self.train_dataset = self.create_dataset(
+            self.train_folder_path, train_transform
+        )
+
+        logger.info("Creating validation dataset...")
+        val_transform = self.get_eval_transform()
+        self.val_dataset = self.create_dataset(self.val_folder_path, val_transform)
+
+        logger.info("Creating test dataset...")
+        test_transform = self.get_eval_transform()
+        self.test_dataset = self.create_dataset(self.test_folder_path, test_transform)
+
+        logger.success("Data module setup completed!")
+
     def get_train_transform(self) -> v2.Compose:
+        assert (
+            self.train_stats is not None
+        ), "Train stats must be computed before creating the training transform!"
+
         mean = self.train_stats["mean"]
         std = self.train_stats["std"]
 
@@ -205,80 +318,25 @@ class WildfireDataModule:
 
     def create_dataset(
         self,
-        input_files: list,
-        target_files: list,
-        output_folder_name: str,
+        data_folder: Path,
         transform=None,
     ):
-        dataset_output_folder = self.output_folder_path / output_folder_name
-        dataset_output_folder.mkdir(parents=True)
-
-        input_data_folder = dataset_output_folder / "input"
-        input_data_folder.mkdir()
-
-        target_folder = dataset_output_folder / "target"
-        target_folder.mkdir()
-
-        self.create_tiles_sized_for_model(input_files, input_data_folder)
-        self.create_tiles_sized_for_model(target_files, target_folder)
+        input_folder_path = data_folder / self.input_folder_name
+        target_folder = data_folder / self.target_folder_name
 
         return WildfireDataset(
-            input_folder_path=input_data_folder,
+            input_folder_path=input_folder_path,
             target_folder_path=target_folder,
             input_data_indexes_to_remove=self.input_data_indexes_to_remove,
             transform=transform,
         )
-
-    def create_tiles_sized_for_model(self, files: list, output_folder: Path):
-        tile_size_in_pixels = self.model_input_size
-
-        args = [(file, output_folder, tile_size_in_pixels) for file in files]
-
-        nb_processes = min(min(mp.cpu_count(), self.num_workers), len(files))
-        with mp.Pool(processes=nb_processes) as pool:
-            pool.starmap(self.create_tile_sized_for_model, args)
-
-    def create_tile_sized_for_model(
-        self, file: Path, output_folder: Path, tile_size_in_pixels: int
-    ):
-        dataset = gdal.Open(str(file), gdal.GA_ReadOnly)
-        width = dataset.RasterXSize
-        height = dataset.RasterYSize
-
-        number_of_tiles_horizontally = width // tile_size_in_pixels
-        number_of_tiles_vertically = height // tile_size_in_pixels
-
-        for x in range(number_of_tiles_horizontally):
-            for y in range(number_of_tiles_vertically):
-                pixels_x_offset = x * tile_size_in_pixels
-                pixels_y_offset = y * tile_size_in_pixels
-                extension = get_extension("gtiff")
-                tile_output_file_path = (
-                    output_folder / f"{file.parent.stem}_{file.stem}_{x}_{y}{extension}"
-                )
-
-                cmd = [
-                    "gdal_translate",
-                    "-strict",
-                    "-ot",
-                    "Float32",
-                    "-srcwin",
-                    str(pixels_x_offset),
-                    str(pixels_y_offset),
-                    str(tile_size_in_pixels),
-                    str(tile_size_in_pixels),
-                    str(file),
-                    str(tile_output_file_path),
-                ]
-
-                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
     def train_dataloader(self):
         return DataLoader(
             self.train_dataset,
             batch_size=self.train_batch_size,
             shuffle=True,
-            num_workers=self.num_workers,
+            num_workers=self.data_loading_num_workers,
         )
 
     def val_dataloader(self):
@@ -286,7 +344,7 @@ class WildfireDataModule:
             self.val_dataset,
             batch_size=self.eval_batch_size,
             shuffle=False,
-            num_workers=self.num_workers,
+            num_workers=self.data_loading_num_workers,
         )
 
     def test_dataloader(self):
@@ -294,5 +352,5 @@ class WildfireDataModule:
             self.test_dataset,
             batch_size=self.eval_batch_size,
             shuffle=False,
-            num_workers=self.num_workers,
+            num_workers=self.data_loading_num_workers,
         )

@@ -71,10 +71,14 @@ class SemanticSegmentationTrainer:
 
         start_time = time.time()
         for _ in range(max_nb_epochs):
-            logger.info(f"Epoch {self.epoch}/{max_nb_epochs}")
+            logger.info(
+                f"Epoch {self.epoch}/{max_nb_epochs} best val metric: {self.best_val_metric}"
+            )
             self.train_model_for_1_epoch()
             val_metrics = self.validate_model()
             self.update_best_model(val_metrics)
+            self.epoch += 1
+
         end_time = time.time()
 
         train_duration_minutes = (end_time - start_time) / 60
@@ -82,13 +86,14 @@ class SemanticSegmentationTrainer:
             "train_duration_minutes": train_duration_minutes,
             "best_epoch": self.best_epoch,
             "best_train_step": self.best_train_step,
-            "best_val_metric": self.best_val_metric,
+            "optimization_val_metric_name": self.optimization_metric_name,
+            "best_val_metric_value": self.best_val_metric,
             "best_model_path": self.best_model_path,
         }
 
     def clear_best_model(self):
         self.best_val_metric = (
-            float("inf") if self.minimize_optimization_metric else -float("inf")
+            float("inf") if self.minimize_optimization_metric else float("-inf")
         )
         self.best_model_path = None
         self.best_epoch = None
@@ -111,8 +116,10 @@ class SemanticSegmentationTrainer:
             y_hat = self.model(X)
             y_hat = torch.squeeze(y_hat, dim=1)
 
+            logger.debug("Computing loss...")
             loss = self.loss(y_hat, y.float())
 
+            logger.debug("Optimizing model...")
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -141,12 +148,11 @@ class SemanticSegmentationTrainer:
                 f"{log_prefix}{train_metric_name}", metric_result.item()
             )
 
-        self.epoch += 1
-
     def log_step_metric(self, step: int, metric_name: str, metric_value: float):
         logger.info(f"Step {step}: {metric_name}={metric_value}")
 
     def validate_model(self):
+        logger.debug("Validating model...")
         self.model.eval()
 
         with torch.no_grad():
@@ -190,6 +196,7 @@ class SemanticSegmentationTrainer:
         logger.info(f"Epoch {self.epoch}: {metric_name}={metric_value}")
 
     def update_best_model(self, val_metrics: dict):
+        logger.debug("Updating best model...")
         val_metric = val_metrics[self.optimization_metric_name]
 
         if self.minimize_optimization_metric:
@@ -201,7 +208,7 @@ class SemanticSegmentationTrainer:
             self.best_val_metric = val_metric
             for file in self.best_model_output_folder.glob("*"):
                 file.unlink()
-            self.best_model_path = f"{self.best_model_output_folder}/best_model.pth"
+            self.best_model_path = f"{self.best_model_output_folder}/best_model_epoch_{self.epoch}_step_{self.train_step}.pth"
             self.best_epoch = self.epoch
             self.best_train_step = self.train_step
             self.model.eval()

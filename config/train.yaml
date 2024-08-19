@@ -1,8 +1,7 @@
 seed: 42
 run:
-  name: "wildfire_train_${now:%Y-%m-%d_%H-%M-%S}"
+  name: "unet_${now:%Y-%m-%d_%H-%M-%S}"
 model:
-  input_resolution_in_pixels: 256
   number_of_input_channels: 2
   number_of_classes: 1
   activation_fn_name: "relu"
@@ -11,24 +10,17 @@ model:
   optimizer:
     name: "adam"
     lr: 0.001
+output_path: "data/trainings/"
 data:
-  input_data_periods_folders_paths:
-    - 'REPLACE_WITH_PATH_TO_INPUT_DATA'
-  target_periods_folders_paths:
-    - 'REPLACE_WITH_PATH_TO_TARGET_DATA'
-  input_data_indexes_to_remove: []
+  split_info_file_path: 'data/splits/holdout_split_2024-08-19_12-32-49/data_split_info.json'
   source_no_data_value: -32768.0
   destination_no_data_value: -32768.0
+  data_loading_num_workers: 1
+  input_data_indexes_to_remove: []
 training:
-  max_nb_epochs: 2
-  train_batch_size: 2
-  eval_batch_size: 2
-  val_split: 0.2
+  max_nb_epochs: 1
+  train_batch_size: 32
+  eval_batch_size: 64
   optimization_metric_name: "dice_coef"
   minimize_optimization_metric: false
   loss: "bce_logits"
-  num_workers: 4
-  train_periods:
-    start_inclusive: 2023
-    end_inclusive: 2023
-    period_length_in_years: 1

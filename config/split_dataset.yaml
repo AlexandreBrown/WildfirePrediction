@@ -1,0 +1,18 @@
+seed: 42
+run:
+  name: "holdout_split_${now:%Y-%m-%d_%H-%M-%S}"
+model:
+  input_resolution_in_pixels: 256
+data:
+  input_data_periods_folders_paths:
+    - 'data/datasets/eca32e80-f562-4e18-a015-57b2b27e3f68/input_data/2023_2023'
+  target_periods_folders_paths:
+    - 'data/datasets/eca32e80-f562-4e18-a015-57b2b27e3f68/target/2023_2023'
+  output_folder_path: 'data/splits/'
+  preprocessing_num_workers: 4
+training:
+  val_split: 0.2
+  train_periods:
+    start_inclusive: 2023
+    end_inclusive: 2023
+    period_length_in_years: 1
