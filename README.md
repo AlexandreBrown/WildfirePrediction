@@ -138,6 +138,25 @@ So each big tile represents the data inputs stacked for 1 year for the area deli
     python -m generate_dataset
     ```
 
+### Training
+1. Add the repo source code to the python path (make sure you are at the root of the repository) :  
+    ```bash
+    export PYTHONPATH=$(pwd)/src
+    ```
+1. Set the `PROJ_LIB` environment variable to your conda environment : 
+    ```shell
+    export PROJ_LIB="$CONDA_PREFIX/share/proj/"
+    ```
+1. Update the train config to specify where the data is :  
+    - Set `data.input_data_periods_folders_paths` to a list of string corresponding to the paths to the folder for the range of the input data (eg: '.../2023_2023').  
+      - This list is the list of all the periods (not just train).
+    - Do the same for `data.target_periods_folders_paths`
+
+1. Run the train script :  
+    ```shell
+    python -m train
+    ```
+
 # Contributing  
 1. Follow the [prerequisites](#prerequisites) steps.
 1. [Download & Install Trufflehog Binary](https://github.com/trufflesecurity/trufflehog/releases/tag/v3.81.8)

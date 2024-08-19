@@ -17,6 +17,7 @@ dependencies:
   - conda-forge::loguru=0.7.2
   - conda-forge::psutil=6.0.0
   - conda-forge::scikit-learn=1.5.1
+  - conda-forge::torchmetrics=1.4.0.post0
   - pytorch::pytorch
   - pytorch::torchvision
   - pytorch::torchaudio
