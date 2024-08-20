@@ -19,34 +19,17 @@ class UnetModel(nn.Module):
             num_blocks=num_encoder_decoder_blocks,
             use_batchnorm=use_batchnorm,
         )
-        self.base = ConvBlock(
-            in_channels=self.encoder.out_channels,
-            out_channels=1024,
-            kernel_size=3,
-            stride=1,
-            nb_convs=2,
-            activation_fn_name=activation_fn_name,
-            use_batchnorm=use_batchnorm,
-        )
         self.decoder = UnetDecoder(
-            in_channels=self.base.out_channels,
+            in_channels=self.encoder.out_channels,
             activation_fn_name=activation_fn_name,
             num_blocks=num_encoder_decoder_blocks,
             use_batchnorm=use_batchnorm,
-        )
-        self.output_layer = nn.Conv2d(
-            in_channels=self.decoder.out_channels,
-            out_channels=nb_classes,
-            kernel_size=1,
-            stride=1,
-            padding="same",
+            nb_classes=nb_classes,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         skip_connections, x = self.encoder(x)
-        x = self.base(x)
         x = self.decoder(x, skip_connections)
-        x = self.output_layer(x)
         return x
 
 
@@ -59,8 +42,18 @@ class UnetEncoder(nn.Module):
         use_batchnorm: bool,
     ):
         super().__init__()
-        self.blocks = self.create_blocks(
+        self.blocks, last_block_out_channels = self.create_blocks(
             in_channels, activation_fn_name, num_blocks, use_batchnorm
+        )
+        self.out_channels = 1024
+        self.output_layer = ConvBlock(
+            in_channels=last_block_out_channels,
+            out_channels=self.out_channels,
+            kernel_size=3,
+            stride=1,
+            nb_convs=2,
+            activation_fn_name=activation_fn_name,
+            use_batchnorm=use_batchnorm,
         )
 
     def create_blocks(
@@ -80,15 +73,15 @@ class UnetEncoder(nn.Module):
             in_channels = out_channels
             out_channels *= 2
 
-        self.out_channels = int(in_channels)
-
-        return nn.ModuleList(blocks)
+        return nn.ModuleList(blocks), int(in_channels)
 
     def forward(self, x: torch.Tensor) -> tuple:
         skip_connections = []
         for block in self.blocks:
             conv_output, x = block(x)
             skip_connections.append(conv_output)
+
+        x = self.output_layer(x)
 
         return skip_connections, x
 
@@ -177,10 +170,18 @@ class UnetDecoder(nn.Module):
         activation_fn_name: str,
         num_blocks: int,
         use_batchnorm: bool,
+        nb_classes: int,
     ):
         super().__init__()
-        self.blocks = self.create_blocks(
+        self.blocks, last_block_out_channels = self.create_blocks(
             in_channels, activation_fn_name, num_blocks, use_batchnorm
+        )
+        self.output_layer = nn.Conv2d(
+            in_channels=last_block_out_channels,
+            out_channels=nb_classes,
+            kernel_size=1,
+            stride=1,
+            padding="same",
         )
 
     def create_blocks(
@@ -200,14 +201,14 @@ class UnetDecoder(nn.Module):
             in_channels = out_channels
             out_channels /= 2
 
-        self.out_channels = int(in_channels)
-
-        return nn.ModuleList(blocks)
+        return nn.ModuleList(blocks), int(in_channels)
 
     def forward(self, x: torch.Tensor, skip_connections: list) -> torch.Tensor:
         for i, block in enumerate(self.blocks):
             skip_connection = skip_connections[-(i + 1)]
             x = block(x, skip_connection)
+
+        x = self.output_layer(x)
 
         return x
 
