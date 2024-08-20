@@ -45,7 +45,7 @@ class UnetEncoder(nn.Module):
         self.blocks, last_block_out_channels = self.create_blocks(
             in_channels, activation_fn_name, num_blocks, use_batchnorm
         )
-        self.out_channels = 1024
+        self.out_channels = last_block_out_channels * 2
         self.output_layer = ConvBlock(
             in_channels=last_block_out_channels,
             out_channels=self.out_channels,
@@ -192,7 +192,7 @@ class UnetDecoder(nn.Module):
         use_batchnorm: bool,
     ):
         blocks = []
-        out_channels = 512
+        out_channels = in_channels / 2
         for _ in range(num_blocks):
             block = UnetDecoderBlock(
                 int(in_channels), int(out_channels), activation_fn_name, use_batchnorm
