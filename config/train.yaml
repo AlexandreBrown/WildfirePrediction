@@ -1,3 +1,4 @@
+debug: false
 seed: 42
 run:
   name: "unet_${now:%Y-%m-%d_%H-%M-%S}"
@@ -24,3 +25,7 @@ training:
   optimization_metric_name: "dice_coef"
   minimize_optimization_metric: false
   loss: "bce_logits"
+logging:
+  loggers:
+    - loguru
+    # - comet_ml

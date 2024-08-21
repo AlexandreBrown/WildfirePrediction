@@ -234,7 +234,7 @@ def download_gov_can_data(cfg: DictConfig):
 
 @hydra.main(version_base=None, config_path="config", config_name="download_data")
 def main(cfg: DictConfig):
-    logger.remove()
+    logger.remove(0)
     logger.add(
         sys.stdout,
         format=default_project_format,

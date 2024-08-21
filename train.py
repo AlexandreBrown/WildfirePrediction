@@ -1,18 +1,49 @@
 import torch
+import numpy as np
 import hydra
 import json
+import sys
 from losses.loss_factory import create_loss
 from models.cnn.unet.model import UnetModel
 from datasets.wildfire_data_module import WildfireDataModule
 from optimizers.optimizer_factory import create_optimizer
 from pathlib import Path
 from loguru import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from trainers.semantic_segmentation_trainer import SemanticSegmentationTrainer
+from loggers.factory import LoggerFactory
+from comet_ml.exceptions import InterruptedExperiment
+from logging_utils.formats import default_project_format
 
 
 @hydra.main(version_base=None, config_path="config", config_name="train")
 def main(cfg: DictConfig):
+
+    logger.remove(0)
+
+    run_name = cfg["run"]["name"]
+    log_folder_path = Path(f"logs/train/{run_name}/")
+    log_folder_path.mkdir(parents=True, exist_ok=True)
+    log_file_name = log_folder_path / "output.log"
+    logger.add(
+        str(log_file_name),
+        format=default_project_format,
+        colorize=True,
+        level="DEBUG" if cfg.debug else "INFO",
+    )
+    logger.add(
+        sys.stdout,
+        format=default_project_format,
+        colorize=True,
+        level="DEBUG" if cfg.debug else "INFO",
+    )
+
+    logger.info(f"Run name: {run_name}")
+    logger.info(f"Debug : {cfg.debug}")
+    logger.info(f"Seed: {cfg.seed}")
+    torch.manual_seed(cfg.seed)
+    np.random.seed(cfg.seed)
+
     base_folder = Path(cfg["output_path"]) / Path(cfg["run"]["name"])
     base_folder.mkdir(parents=True, exist_ok=True)
 
@@ -44,6 +75,7 @@ def main(cfg: DictConfig):
 
     train_dl = data_module.train_dataloader()
     val_dl = data_module.val_dataloader()
+    test_dl = data_module.test_dataloader()
 
     model = UnetModel(
         in_channels=cfg["model"]["number_of_input_channels"],
@@ -69,6 +101,8 @@ def main(cfg: DictConfig):
 
     best_model_output_folder = base_folder / "models/"
 
+    logger_factory = LoggerFactory(OmegaConf.to_container(cfg))
+
     trainer = SemanticSegmentationTrainer(
         model=model,
         data_module=data_module,
@@ -78,21 +112,18 @@ def main(cfg: DictConfig):
         optimization_metric_name=cfg["training"]["optimization_metric_name"],
         minimize_optimization_metric=cfg["training"]["minimize_optimization_metric"],
         best_model_output_folder=best_model_output_folder,
+        logger_factory=logger_factory,
+        output_folder=base_folder,
     )
 
-    train_result = trainer.train_model(
-        max_nb_epochs=max_nb_epochs, train_dl=train_dl, val_dl=val_dl
-    )
-
-    logger.info(f"Training result: {train_result}")
-
-    train_result_path = base_folder / "train_result.json"
-    with open(train_result_path, "w") as f:
-        json.dump(train_result, f, indent=4)
-
-    logger.info(f"Training result saved to {str(train_result_path)}")
-
-    logger.success("Training completed successfully!")
+    try:
+        trainer.train_model(
+            max_nb_epochs=max_nb_epochs, train_dl=train_dl, val_dl=val_dl
+        )
+        trainer.test_model(test_dl)
+    except InterruptedExperiment as exc:
+        logger.info("status", str(exc))
+        logger.info("Experiment interrupted!")
 
 
 if __name__ == "__main__":

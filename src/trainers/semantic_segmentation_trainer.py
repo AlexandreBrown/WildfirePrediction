@@ -1,13 +1,15 @@
 import time
+import json
 import torch
 import torch.nn as nn
-import torchmetrics
+from tqdm import tqdm
 from loguru import logger
 from torch.utils.data import DataLoader
-import torchmetrics.classification
-import torchmetrics.segmentation
 from datasets.wildfire_data_module import WildfireDataModule
 from pathlib import Path
+from loggers.factory import LoggerFactory
+from metrics.dice_coef_metric import DiceCoefMetric
+from metrics.pr_auc import PrecisionRecallAuc
 
 
 class SemanticSegmentationTrainer:
@@ -21,6 +23,8 @@ class SemanticSegmentationTrainer:
         optimization_metric_name: str,
         minimize_optimization_metric: bool,
         best_model_output_folder: Path,
+        logger_factory: LoggerFactory,
+        output_folder: Path,
     ):
         self.model = model.to(device)
         self.data_module = data_module
@@ -31,65 +35,80 @@ class SemanticSegmentationTrainer:
         self.minimize_optimization_metric = minimize_optimization_metric
         self.best_model_output_folder = best_model_output_folder
         self.best_model_output_folder.mkdir(parents=True, exist_ok=True)
-
+        self.logger_factory = logger_factory
+        self.output_folder = output_folder
         self.train_metrics = self.create_metrics()
         self.val_metrics = self.create_metrics()
-
+        self.test_metrics = self.create_metrics()
         self.clear_best_model()
         logger.info("Trainer initialized!")
 
     def create_metrics(self) -> list:
-        return [
-            (
-                "dice_coef",
-                torchmetrics.segmentation.GeneralizedDiceScore(num_classes=1),
-                self.metric_logits_to_class_index,
-            ),
-            (
-                "pr_auc",
-                torchmetrics.classification.BinaryAveragePrecision(),
-                self.metric_logits_to_logits,
-            ),
-        ]
+        return [DiceCoefMetric(nb_classes=1), PrecisionRecallAuc()]
 
-    def metric_logits_to_class_index(self, y_hat, y, metric):
-        y_hat_binary = (torch.sigmoid(y_hat) > 0.5).long()
-        return metric(y_hat_binary, y)
-
-    def metric_logits_to_logits(self, y_hat, y, metric):
-        return metric(y_hat, y)
-
-    def train_model(
-        self, max_nb_epochs: int, train_dl: DataLoader, val_dl: DataLoader
-    ) -> dict:
+    def train_model(self, max_nb_epochs: int, train_dl: DataLoader, val_dl: DataLoader):
         logger.info("Training model...")
         self.clear_best_model()
-        self.train_step = 1
-        self.epoch = 1
+        self.train_step = 0
+        self.epoch = 0
         self.train_dl = train_dl
         self.val_dl = val_dl
+        self.train_logger = self.logger_factory.create("train_")
+        self.val_logger = self.logger_factory.create("val_")
 
         start_time = time.time()
-        for _ in range(max_nb_epochs):
-            logger.info(
-                f"Epoch {self.epoch}/{max_nb_epochs} best val metric: {self.best_val_metric}"
-            )
-            self.train_model_for_1_epoch()
-            val_metrics = self.validate_model()
-            self.update_best_model(val_metrics)
+
+        epochs = tqdm(range(max_nb_epochs), desc="Epochs")
+
+        for _ in epochs:
             self.epoch += 1
+            self.train_model_for_1_epoch()
+            self.validate_model()
+            self.update_epoch_metrics_progress(epochs)
+            self.update_best_model()
+            self.train_logger.on_epoch_end(self.epoch)
+            self.val_logger.on_epoch_end(self.epoch)
 
         end_time = time.time()
 
-        train_duration_minutes = (end_time - start_time) / 60
-        return {
-            "train_duration_minutes": train_duration_minutes,
+        train_duration_in_minutes = (end_time - start_time) / 60
+
+        train_results = {
+            "train_duration_in_minutes": train_duration_in_minutes,
             "best_epoch": self.best_epoch,
             "best_train_step": self.best_train_step,
             "optimization_val_metric_name": self.optimization_metric_name,
             "best_val_metric_value": self.best_val_metric,
             "best_model_path": self.best_model_path,
         }
+
+        self.save_training_results(train_results)
+
+        logger.success("Training completed successfully!")
+
+    def update_epoch_metrics_progress(self, epochs):
+        formatted_train_metrics = self.train_logger.format_metrics(
+            self.train_logger.epoch_metrics
+        )
+        formatted_train_metrics = {
+            f"train_{k}": v for k, v in formatted_train_metrics.items()
+        }
+
+        formatted_val_metrics = self.val_logger.format_metrics(
+            self.val_logger.epoch_metrics
+        )
+        formatted_val_metrics = {
+            f"val_{k}": v for k, v in formatted_val_metrics.items()
+        }
+
+        epochs.set_postfix({**formatted_train_metrics, **formatted_val_metrics})
+
+    def save_training_results(self, train_result: dict):
+        logger.info(f"Training result: {train_result}")
+        train_result_path = self.output_folder / "train_result.json"
+        with open(train_result_path, "w") as f:
+            json.dump(train_result, f, indent=4)
+        logger.info(f"Training result saved to {str(train_result_path)}")
 
     def clear_best_model(self):
         self.best_val_metric = (
@@ -102,68 +121,64 @@ class SemanticSegmentationTrainer:
     def train_model_for_1_epoch(self):
         self.model.train()
 
-        log_prefix = "train_"
-
         epoch_loss = 0.0
-        number_of_batches = 0
 
-        for X, y in self.train_dl:
+        train_loader = tqdm(self.train_dl, desc="Training", leave=False)
+
+        for X, y in train_loader:
+            self.train_step += 1
 
             X = X.to(self.device)
             y = y.to(self.device)
 
             logger.debug(f"Predicting train batch X ({X.shape}) y ({y.shape})...")
             y_hat = self.model(X)
+            logger.debug(f"Predicted y_hat ({y_hat.shape})")
             y_hat = torch.squeeze(y_hat, dim=1)
+            logger.debug(f"Predicted y_hat after squeeze ({y_hat.shape})")
 
             logger.debug("Computing loss...")
+            logger.debug(f"y_hat {y_hat.shape} y {y.shape}")
             loss = self.loss(y_hat, y.float())
 
             logger.debug("Optimizing model...")
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            self.log_step_metric(self.train_step, f"{log_prefix}loss", loss.item())
 
-            for train_metric_name, train_metric, metric_wrapper in self.train_metrics:
-                metric_value = metric_wrapper(y_hat, y, train_metric)
+            self.train_logger.log_step_metric("loss", loss.item())
 
-                self.log_step_metric(
-                    self.train_step,
-                    f"{log_prefix}{train_metric_name}",
-                    metric_value.item(),
+            for train_metric in self.train_metrics:
+                metric_value = train_metric(y_hat, y)
+                self.train_logger.log_step_metric(
+                    train_metric.name, metric_value.item()
                 )
+
+            formatted_metrics = self.train_logger.format_metrics(
+                self.train_logger.step_metrics
+            )
+            train_loader.set_postfix(formatted_metrics)
+            self.train_logger.on_step_end(self.train_step)
 
             epoch_loss += loss.item()
 
-            self.train_step += 1
-            number_of_batches += 1
+        epoch_loss /= len(self.train_dl)
+        self.train_logger.log_epoch_metric("loss", epoch_loss)
 
-        epoch_loss /= number_of_batches
-        self.log_epoch_metric(f"{log_prefix}loss", epoch_loss)
-
-        for train_metric_name, train_metric, _ in self.train_metrics:
+        for train_metric in self.train_metrics:
             metric_result = train_metric.compute()
-            self.log_epoch_metric(
-                f"{log_prefix}{train_metric_name}", metric_result.item()
-            )
-
-    def log_step_metric(self, step: int, metric_name: str, metric_value: float):
-        logger.info(f"Step {step}: {metric_name}={metric_value}")
+            self.train_logger.log_epoch_metric(train_metric.name, metric_result.item())
 
     def validate_model(self):
         logger.debug("Validating model...")
         self.model.eval()
 
+        val_loss = 0.0
+
+        val_loader = tqdm(self.val_dl, desc="Validation", leave=False)
+
         with torch.no_grad():
-            log_prefix = "val_"
-
-            val_metrics = {}
-
-            val_loss = 0.0
-            number_of_batches = 0
-
-            for X, y in self.val_dl:
+            for X, y in val_loader:
 
                 X = X.to(self.device)
                 y = y.to(self.device)
@@ -174,38 +189,34 @@ class SemanticSegmentationTrainer:
                 loss = self.loss(y_hat, y.float())
 
                 val_loss += loss.item()
-                number_of_batches += 1
 
-                for val_metric_name, val_metric, metric_wrapper in self.val_metrics:
-                    metric_wrapper(y_hat, y, val_metric)
+                for val_metric in self.val_metrics:
+                    val_metric(y_hat, y)
 
-            val_loss /= number_of_batches
-            self.log_epoch_metric(f"{log_prefix}loss", val_loss)
-            val_metrics[f"{log_prefix}loss"] = val_loss
+            val_loss /= len(self.val_dl)
+            self.val_logger.log_epoch_metric("loss", val_loss)
 
-            for val_metric_name, val_metric, _ in self.val_metrics:
+            for val_metric in self.val_metrics:
                 metric_result = val_metric.compute()
-                self.log_epoch_metric(
-                    f"{log_prefix}{val_metric_name}", metric_result.item()
-                )
-                val_metrics[val_metric_name] = metric_result.item()
+                self.val_logger.log_epoch_metric(val_metric.name, metric_result.item())
 
-        return val_metrics
-
-    def log_epoch_metric(self, metric_name: str, metric_value: float):
-        logger.info(f"Epoch {self.epoch}: {metric_name}={metric_value}")
-
-    def update_best_model(self, val_metrics: dict):
+    def update_best_model(self):
         logger.debug("Updating best model...")
-        val_metric = val_metrics[self.optimization_metric_name]
+        val_metric_to_optimize = self.val_logger.epoch_metrics[
+            self.optimization_metric_name
+        ]
 
         if self.minimize_optimization_metric:
-            is_latest_val_metric_better = val_metric < self.best_val_metric
+            is_model_better = val_metric_to_optimize < self.best_val_metric
         else:
-            is_latest_val_metric_better = val_metric > self.best_val_metric
+            is_model_better = val_metric_to_optimize > self.best_val_metric
 
-        if is_latest_val_metric_better:
-            self.best_val_metric = val_metric
+        logger.info(
+            f"is_model_better {is_model_better} | Previous {self.optimization_metric_name} : {self.best_val_metric} | new {self.optimization_metric_name} : {val_metric_to_optimize}"
+        )
+
+        if is_model_better:
+            self.best_val_metric = val_metric_to_optimize
             for file in self.best_model_output_folder.glob("*"):
                 file.unlink()
             self.best_model_path = f"{self.best_model_output_folder}/best_model_epoch_{self.epoch}_step_{self.train_step}.pth"
@@ -213,3 +224,43 @@ class SemanticSegmentationTrainer:
             self.best_train_step = self.train_step
             self.model.eval()
             torch.save(self.model.state_dict(), self.best_model_path)
+
+    def test_model(self, test_dl: DataLoader):
+        logger.info("Testing model...")
+        assert (
+            self.train_dl != test_dl and self.val_dl != test_dl
+        ), "Test set should be different from train and val sets!"
+
+        test_loss = 0.0
+        self.test_dl = test_dl
+        self.test_logger = self.logger_factory.create("test_")
+
+        self.model.eval()
+
+        test_loader = tqdm(self.test_dl, desc="Testing", leave=False)
+
+        for X, y in test_loader:
+
+            X = X.to(self.device)
+            y = y.to(self.device)
+
+            y_hat = self.model(X)
+            y_hat = torch.squeeze(y_hat, dim=1)
+
+            loss = self.loss(y_hat, y.float())
+
+            test_loss += loss.item()
+
+            for test_metric in self.test_metrics:
+                test_metric(y_hat, y)
+
+        test_loss /= len(self.test_dl)
+        self.test_logger.log_epoch_metric("loss", test_loss)
+
+        for test_metric in self.test_metrics:
+            metric_result = test_metric.compute()
+            self.test_logger.log_epoch_metric(test_metric.name, metric_result.item())
+
+        self.test_logger.on_epoch_end(epoch=1)
+
+        logger.success("Testing completed successfully!")

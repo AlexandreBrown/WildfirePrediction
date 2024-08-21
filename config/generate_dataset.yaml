@@ -22,7 +22,6 @@ paths:
   output_folder_path: "data/datasets/"
 max_io_concurrency: 16
 max_cpu_concurrency: 8
-log_to_file: true
 no_data_value: -32768
 input_data:
     dynamic:

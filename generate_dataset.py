@@ -15,7 +15,7 @@ from logging_utils.formats import default_project_format
 
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
 def main(cfg: DictConfig):
-    logger.remove()
+    logger.remove(0)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_folder_path = Path(f"logs/generate_dataset/{timestamp}/")
@@ -23,7 +23,14 @@ def main(cfg: DictConfig):
     log_file_name = log_folder_path / "output.log"
 
     logger.add(
-        str(log_file_name) if cfg.log_to_file else sys.stdout,
+        str(log_file_name),
+        format=default_project_format,
+        colorize=True,
+        level="DEBUG" if cfg.debug else "INFO",
+        enqueue=True,
+    )
+    logger.add(
+        sys.stdout,
         format=default_project_format,
         colorize=True,
         level="DEBUG" if cfg.debug else "INFO",
