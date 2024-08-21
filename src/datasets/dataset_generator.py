@@ -76,7 +76,8 @@ class DatasetGenerator:
                 total=get_ram_total(),
             )
 
-            self.cleanup_folder(tmp_folder_path)
+            if self.config["cleanup_tmp_folder_on_success"]:
+                self.cleanup_folder(tmp_folder_path)
 
             logger.success("Dataset generation DONE !")
         except BaseException as e:
@@ -900,7 +901,9 @@ class DatasetGenerator:
         max_tries = 15
         for _ in range(max_tries):
             try:
-                subprocess.run(command, check=True, shell=True, stdout=subprocess.DEVNULL)
+                subprocess.run(
+                    command, check=True, shell=True, stdout=subprocess.DEVNULL
+                )
                 return
             except Exception as e:
                 logger.error(

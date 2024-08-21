@@ -23,6 +23,7 @@ paths:
 max_io_concurrency: 16
 max_cpu_concurrency: 8
 no_data_value: -32768
+cleanup_tmp_folder_on_success: true
 input_data:
     dynamic:
       era5_reanalysis_100m_u_component_of_wind:
