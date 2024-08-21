@@ -1,6 +1,6 @@
 debug: false
 periods:
-  target_year_start_inclusive: 2023
+  target_year_start_inclusive: 2001
   target_year_end_inclusive: 2023
   month_start_inclusive: 5
   month_end_inclusive: 10

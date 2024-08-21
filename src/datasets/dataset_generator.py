@@ -903,7 +903,7 @@ class DatasetGenerator:
 
     def run_command(self, command: str):
         tries = 1
-        max_tries = 15
+        max_tries = 100
         for _ in range(max_tries):
             try:
                 subprocess.run(
