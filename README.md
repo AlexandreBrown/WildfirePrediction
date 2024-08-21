@@ -130,10 +130,14 @@ Note that this step outputs big tiles and these tiles are usually larger than th
 Each big tile is of dimension C x H x W where = C the number of different sources of data (eg: NDVI, EVI, LAI, ...), H = 512 and W = 512.  
 So each big tile represents the data inputs stacked for 1 year for the area delimited by the 512x512 pixels area. 
 
+1. Add the repo source code to the python path (make sure you are at the root of the repository) :  
+    ```bash
+    export PYTHONPATH=$(pwd)/src
+    ```
 1. Edit the configuration (or leave as-is) under `config/generate_dataset.yaml`.   
     - One can change the pixel size resolution (eg: 250 meters), tile size in pixels (eg: 512x512).
     - The sources names must match the folder name created during the download step. 
-2. Execute the dataset generation script :  
+1. Execute the dataset generation script :  
     ```bash
     python -m generate_dataset
     ```

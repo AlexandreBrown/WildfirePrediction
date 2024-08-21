@@ -232,8 +232,10 @@ class DatasetGenerator:
 
         data_index = {}
         nb_processes = min(self.max_cpu_concurrency, len(args))
-        with mp.Pool(processes=nb_processes) as pool:
-            input_data_indexes = pool.starmap(self._process_input_data, args)
+        with mp.Pool(processes=nb_processes, maxtasksperchild=1) as pool:
+            input_data_indexes = pool.starmap(
+                self._process_input_data, args, chunksize=1
+            )
 
         for input_data_index in input_data_indexes:
             for data_name, years_index_or_files_paths in input_data_index.items():
@@ -692,13 +694,16 @@ class DatasetGenerator:
                 for file in input_folder.glob(f"*{get_extension('netcdf')}")
             ]
         )
-        output_file = (
-            month_output_folder / Path("merged") / f"merged{get_extension('gtiff')}"
-        )
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_vrt_file = month_output_folder / Path("merged") / "merged.vrt"
+        output_vrt_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.run_command(
-            f"gdalwarp --quiet -overwrite -multi -of GTiff {input_files} {str(output_file)}"
+            f"gdalbuildvrt -overwrite {str(output_vrt_file)} {input_files}"
+        )
+
+        output_file = output_vrt_file.with_suffix(get_extension("gtiff"))
+        self.run_command(
+            f"gdal_translate -of GTiff {str(output_vrt_file)} {str(output_file)}"
         )
 
         return output_file
