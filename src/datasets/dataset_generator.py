@@ -694,16 +694,13 @@ class DatasetGenerator:
                 for file in input_folder.glob(f"*{get_extension('netcdf')}")
             ]
         )
-        output_vrt_file = month_output_folder / Path("merged") / "merged.vrt"
-        output_vrt_file.parent.mkdir(parents=True, exist_ok=True)
-
-        self.run_command(
-            f"gdalbuildvrt -overwrite {str(output_vrt_file)} {input_files}"
+        output_file = (
+            month_output_folder / Path("merged") / f"merged{get_extension('gtiff')}"
         )
+        output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        output_file = output_vrt_file.with_suffix(get_extension("gtiff"))
         self.run_command(
-            f"gdal_translate -of GTiff {str(output_vrt_file)} {str(output_file)}"
+            f"gdalwarp --quiet -overwrite -multi -of GTiff {input_files} {str(output_file)}"
         )
 
         return output_file
