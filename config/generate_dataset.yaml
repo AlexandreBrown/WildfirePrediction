@@ -20,54 +20,12 @@ projections:
 paths:
   input_folder_path: "/media/user/c6e0bc12-4124-418d-9053-82363c4565f8/WildfirePrediction/data/download/"
   output_folder_path: "data/datasets/"
-max_io_concurrency: 20
-max_cpu_concurrency: 8
+max_io_concurrency: 6
+max_cpu_concurrency: 6
 no_data_value: -32768
 cleanup_tmp_folder_on_success: true
 input_data:
     dynamic:
-      era5_reanalysis_100m_u_component_of_wind:
-        netcdf_layer: ""
-        aggregation_strategy: "average"
-        data_type: "continuous"
-        fill_values: [-32767]
-        is_affected_by_fires: false
-      era5_reanalysis_100m_v_component_of_wind:
-        netcdf_layer: ""
-        aggregation_strategy: "average"
-        data_type: "continuous"
-        fill_values: [-32767]
-        is_affected_by_fires: false
-      era5_reanalysis_2m_temperature:
-        netcdf_layer: ""
-        aggregation_strategy: "average"
-        data_type: "continuous"
-        fill_values: [-32767]
-        is_affected_by_fires: false
-      era5_reanalysis_potential_evaporation:
-        netcdf_layer: ""
-        aggregation_strategy: "average"
-        data_type: "continuous"
-        fill_values: [-32767]
-        is_affected_by_fires: false
-      era5_reanalysis_surface_net_solar_radiation:
-        netcdf_layer: ""
-        aggregation_strategy: "average"
-        data_type: "continuous"
-        fill_values: [-32767]
-        is_affected_by_fires: false
-      era5_reanalysis_surface_runoff:
-        netcdf_layer: ""
-        aggregation_strategy: "average"
-        data_type: "continuous"
-        fill_values: [-32767]
-        is_affected_by_fires: false
-      era5_reanalysis_total_precipitation:
-        netcdf_layer: ""
-        aggregation_strategy: "average"
-        data_type: "continuous"
-        fill_values: [-32767]
-        is_affected_by_fires: false
       MOD13Q1_061__250m_16_days_NDVI:
         netcdf_layer: "_250m_16_days_NDVI"
         aggregation_strategy: "average"
@@ -110,6 +68,48 @@ input_data:
         data_type: "categorical"
         fill_values: [0, 1, 2]
         is_affected_by_fires: true
+      era5_reanalysis_100m_u_component_of_wind:
+        netcdf_layer: ""
+        aggregation_strategy: "average"
+        data_type: "continuous"
+        fill_values: [-32767]
+        is_affected_by_fires: false
+      era5_reanalysis_100m_v_component_of_wind:
+        netcdf_layer: ""
+        aggregation_strategy: "average"
+        data_type: "continuous"
+        fill_values: [-32767]
+        is_affected_by_fires: false
+      era5_reanalysis_2m_temperature:
+        netcdf_layer: ""
+        aggregation_strategy: "average"
+        data_type: "continuous"
+        fill_values: [-32767]
+        is_affected_by_fires: false
+      era5_reanalysis_potential_evaporation:
+        netcdf_layer: ""
+        aggregation_strategy: "average"
+        data_type: "continuous"
+        fill_values: [-32767]
+        is_affected_by_fires: false
+      era5_reanalysis_surface_net_solar_radiation:
+        netcdf_layer: ""
+        aggregation_strategy: "average"
+        data_type: "continuous"
+        fill_values: [-32767]
+        is_affected_by_fires: false
+      era5_reanalysis_surface_runoff:
+        netcdf_layer: ""
+        aggregation_strategy: "average"
+        data_type: "continuous"
+        fill_values: [-32767]
+        is_affected_by_fires: false
+      era5_reanalysis_total_precipitation:
+        netcdf_layer: ""
+        aggregation_strategy: "average"
+        data_type: "continuous"
+        fill_values: [-32767]
+        is_affected_by_fires: false
     static:
       SRTMGL3_NC_003_SRTMGL3_DEM:
         netcdf_layer: ""
