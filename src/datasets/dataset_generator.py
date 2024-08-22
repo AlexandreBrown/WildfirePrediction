@@ -1,10 +1,9 @@
 import shutil
+import asyncio
 import geopandas as gpd
 import uuid
-import subprocess
 import time
 import numpy as np
-import multiprocessing as mp
 from osgeo import gdal
 from pathlib import Path
 from loguru import logger
@@ -56,7 +55,7 @@ class DatasetGenerator:
 
             target_years_ranges = self.generate_target_years_ranges()
 
-            self.process_input_data(
+            await self.process_input_data(
                 dataset_folder_path,
                 tmp_folder_path,
                 big_tiles_boundaries,
@@ -132,7 +131,7 @@ class DatasetGenerator:
 
                 logger.info("Resizing, reprojecting and clipping raster...")
                 data_type = "categorical"
-                clipped_file_path = self.resize_reproject_clip_raster(
+                clipped_file_path = await self.resize_reproject_clip_raster(
                     combined_raster_path,
                     tiles_preprocessing_output_folder,
                     data_type,
@@ -145,7 +144,7 @@ class DatasetGenerator:
                     / Path(f"{years_range[0]}_{years_range[-1]}")
                 )
                 years_range_output_folder_path.mkdir(parents=True, exist_ok=True)
-                self.create_tiles(
+                await self.create_tiles(
                     clipped_file_path,
                     years_range_output_folder_path,
                     big_tiles_boundaries,
@@ -197,13 +196,15 @@ class DatasetGenerator:
         tmp_folder_path.mkdir(parents=True, exist_ok=True)
         return tmp_folder_path
 
-    def process_input_data(
+    async def process_input_data(
         self,
         dataset_folder_path: Path,
         tmp_folder_path: Path,
         big_tiles_boundaries: gpd.GeoDataFrame,
         target_years_ranges: list,
     ):
+        semaphore = asyncio.Semaphore(self.max_io_concurrency)
+
         dynamic_data = self.config["input_data"].get("dynamic", {})
         dynamic_input_data_args = [
             (
@@ -212,6 +213,7 @@ class DatasetGenerator:
                 data_name,
                 data_info,
                 big_tiles_boundaries,
+                semaphore,
             )
             for data_name, data_info in dynamic_data.items()
         ]
@@ -224,6 +226,7 @@ class DatasetGenerator:
                 data_name,
                 data_info,
                 big_tiles_boundaries,
+                semaphore,
             )
             for data_name, data_info in static_data.items()
         ]
@@ -231,32 +234,37 @@ class DatasetGenerator:
         args = dynamic_input_data_args + static_input_data_args
 
         data_index = {}
-        nb_processes = min(self.max_cpu_concurrency, len(args))
-        with mp.Pool(processes=nb_processes, maxtasksperchild=1) as pool:
-            input_data_indexes = pool.starmap(
-                self._process_input_data, args, chunksize=1
-            )
+
+        tasks = set()
+
+        for arg in args:
+            task = asyncio.create_task(self._process_input_data(*arg))
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+
+        input_data_indexes = await asyncio.gather(*tasks)
 
         for input_data_index in input_data_indexes:
             for data_name, years_index_or_files_paths in input_data_index.items():
                 data_index[data_name] = years_index_or_files_paths
 
-        self.stack_input_data(
-            dataset_folder_path,
-            target_years_ranges,
-            data_index,
+        await self.stack_input_data(
+            dataset_folder_path, target_years_ranges, data_index, semaphore
         )
 
-    def _process_input_data(self, *args):
-        processing_fn = args[0]
-        return processing_fn(*args[1:])
+    async def _process_input_data(self, *args):
+        semaphore = args[-1]
+        async with semaphore:
+            processing_fn = args[0]
+            return await processing_fn(*args[1:])
 
-    def process_dynamic_input_data(
+    async def process_dynamic_input_data(
         self,
         output_folder_path: Path,
         data_name: str,
         data_info: dict,
         big_tiles_boundaries: gpd.GeoDataFrame,
+        semaphore: asyncio.Semaphore,
     ) -> dict:
         with logger.contextualize(data_name=data_name):
             is_affected_by_fires = data_info.get("is_affected_by_fires", False)
@@ -267,50 +275,22 @@ class DatasetGenerator:
                 is_affected_by_fires
             ):
                 with logger.contextualize(year=year):
-                    months_files_paths = []
+                    tasks = set()
                     for month in self.get_months_range():
-                        with logger.contextualize(month=month):
-                            data_input_folder = (
-                                self.input_folder_path
-                                / Path(f"{year}")
-                                / Path(f"{month}")
-                                / Path(f"{data_name}")
-                            )
-                            month_output_folder = (
-                                output_folder_path
-                                / Path(f"{year}")
-                                / Path(f"{month}")
-                                / Path(f"{data_name}")
-                            )
-
-                            logger.info("Merging files...")
-                            logger.opt(lazy=True).debug(
-                                "RAM Usage: {used:.2f}/{total:.2f}",
-                                used=get_ram_used(),
-                                total=get_ram_total(),
-                            )
-                            merged_file_path = self.merge_spatially(
-                                data_input_folder,
-                                month_output_folder,
+                        task = asyncio.create_task(
+                            self.process_dynamic_input_data_month(
+                                output_folder_path,
+                                data_name,
                                 data_info,
+                                year,
+                                month,
+                                semaphore,
                             )
-                            logger.opt(lazy=True).debug(
-                                "RAM Usage: {used:.2f}/{total:.2f}",
-                                used=get_ram_used(),
-                                total=get_ram_total(),
-                            )
+                        )
+                        tasks.add(task)
+                        task.add_done_callback(tasks.discard)
 
-                            logger.info("Aggregating bands for month...")
-                            month_aggregated_file_path = self.aggregate_file(
-                                merged_file_path, month_output_folder, data_info
-                            )
-                            logger.opt(lazy=True).debug(
-                                "RAM Usage: {used:.2f}/{total:.2f}",
-                                used=get_ram_used(),
-                                total=get_ram_total(),
-                            )
-                            self.cleanup_file(merged_file_path)
-                            months_files_paths.append(month_aggregated_file_path)
+                    months_files_paths = await asyncio.gather(*tasks)
 
                     year_output_folder = (
                         output_folder_path / Path(f"{year}") / data_name
@@ -318,8 +298,11 @@ class DatasetGenerator:
                     year_output_folder.mkdir(parents=True, exist_ok=True)
 
                     logger.info("Aggregating data for year...")
-                    yearly_aggregated_file_path = self.aggregate_files(
-                        months_files_paths, year_output_folder, data_info
+                    yearly_aggregated_file_path = await asyncio.to_thread(
+                        self.aggregate_files,
+                        months_files_paths,
+                        year_output_folder,
+                        data_info,
                     )
                     logger.opt(lazy=True).debug(
                         "RAM Usage: {used:.2f}/{total:.2f}",
@@ -330,7 +313,7 @@ class DatasetGenerator:
 
                     logger.info("Resizing, reprojecting and clipping raster...")
                     data_type = data_info.get("data_type", None)
-                    clipped_file_path = self.resize_reproject_clip_raster(
+                    clipped_file_path = await self.resize_reproject_clip_raster(
                         yearly_aggregated_file_path,
                         year_output_folder,
                         data_type,
@@ -344,15 +327,73 @@ class DatasetGenerator:
                     self.cleanup_file(yearly_aggregated_file_path)
 
                     logger.info("Creating tiles...")
-                    tiles_files_paths = self.create_tiles(
+                    tiles_files_paths = await self.create_tiles(
                         clipped_file_path, year_output_folder, big_tiles_boundaries
                     )
                     if data_name not in data_years_index.keys():
                         data_years_index[data_name] = {}
                     data_years_index[data_name][year] = tiles_files_paths
                     self.cleanup_file(clipped_file_path)
-        logger.complete()
+
+        await logger.complete()
+
         return data_years_index
+
+    async def process_dynamic_input_data_month(
+        self,
+        output_folder_path: Path,
+        data_name: str,
+        data_info: dict,
+        year: int,
+        month: int,
+        semaphore: asyncio.Semaphore,
+    ):
+        async with semaphore:
+            with logger.contextualize(month=month):
+                data_input_folder = (
+                    self.input_folder_path
+                    / Path(f"{year}")
+                    / Path(f"{month}")
+                    / Path(f"{data_name}")
+                )
+                month_output_folder = (
+                    output_folder_path
+                    / Path(f"{year}")
+                    / Path(f"{month}")
+                    / Path(f"{data_name}")
+                )
+
+                logger.info("Merging files...")
+                logger.opt(lazy=True).debug(
+                    "RAM Usage: {used:.2f}/{total:.2f}",
+                    used=get_ram_used(),
+                    total=get_ram_total(),
+                )
+                merged_file_path = await self.merge_spatially(
+                    data_input_folder,
+                    month_output_folder,
+                    data_info,
+                )
+                logger.opt(lazy=True).debug(
+                    "RAM Usage: {used:.2f}/{total:.2f}",
+                    used=get_ram_used(),
+                    total=get_ram_total(),
+                )
+
+                logger.info("Aggregating bands for month...")
+                month_aggregated_file_path = await asyncio.to_thread(
+                    self.aggregate_file,
+                    merged_file_path,
+                    month_output_folder,
+                    data_info,
+                )
+                logger.opt(lazy=True).debug(
+                    "RAM Usage: {used:.2f}/{total:.2f}",
+                    used=get_ram_used(),
+                    total=get_ram_total(),
+                )
+                self.cleanup_file(merged_file_path)
+                return month_aggregated_file_path
 
     def cleanup_files(self, files: list):
         for file in files:
@@ -363,12 +404,13 @@ class DatasetGenerator:
             return
         file.unlink()
 
-    def process_static_input_data(
+    async def process_static_input_data(
         self,
         output_folder_path: Path,
         data_name: str,
         data_info: dict,
         big_tiles_boundaries: gpd.GeoDataFrame,
+        semaphore: asyncio.Semaphore,
     ):
         with logger.contextualize(data_name=data_name):
 
@@ -388,7 +430,7 @@ class DatasetGenerator:
             static_output_folder_path.mkdir(parents=True, exist_ok=True)
 
             logger.info("Merging files...")
-            merged_file_path = self.merge_spatially(
+            merged_file_path = await self.merge_spatially(
                 input_folder_path,
                 static_output_folder_path,
                 data_info,
@@ -401,7 +443,7 @@ class DatasetGenerator:
 
             logger.info("Resizing, reprojecting and clipping raster...")
             data_type = "categorical"
-            clipped_file_path = self.resize_reproject_clip_raster(
+            clipped_file_path = await self.resize_reproject_clip_raster(
                 merged_file_path,
                 static_output_folder_path,
                 data_type,
@@ -415,7 +457,7 @@ class DatasetGenerator:
             self.cleanup_file(merged_file_path)
 
             logger.info("Creating tiles...")
-            tiles_files_paths = self.create_tiles(
+            tiles_files_paths = await self.create_tiles(
                 clipped_file_path, static_output_folder_path, big_tiles_boundaries
             )
             self.cleanup_file(clipped_file_path)
@@ -426,10 +468,11 @@ class DatasetGenerator:
             total=get_ram_total(),
         )
 
-        logger.complete()
+        await logger.complete()
+
         return {data_name: tiles_files_paths}
 
-    def create_tiles(
+    async def create_tiles(
         self,
         input_file: Path,
         output_folder_path: Path,
@@ -450,21 +493,34 @@ class DatasetGenerator:
             )
             bounds = tile["geometry"].bounds
             minx, miny, maxx, maxy = bounds
-            self.run_command(
-                f"gdalwarp --quiet -overwrite -multi -of GTiff -te {minx} {miny} {maxx} {maxy} {str(input_file)} {str(tile_output_file)}"
+            await self.run_command(
+                "gdalwarp",
+                [
+                    "--quiet",
+                    "-overwrite",
+                    "-multi",
+                    "-of",
+                    "GTiff",
+                    "-te",
+                    str(minx),
+                    str(miny),
+                    str(maxx),
+                    str(maxy),
+                    str(input_file),
+                    str(tile_output_file),
+                ],
             )
             tiles_paths.append(tile_output_file)
 
         return tiles_paths
 
-    def resize_reproject_clip_raster(
+    async def resize_reproject_clip_raster(
         self,
         input_file: Path,
         output_folder_path: Path,
         data_type: str,
         source_srid: int,
     ):
-
         target_srid = self.config["projections"]["target_srid"]
 
         pixel_size_in_meters = self.config["resolution"]["pixel_size_in_meters"]
@@ -479,8 +535,31 @@ class DatasetGenerator:
             / Path(f"resized_reprojected{get_extension('gtiff')}")
         )
         resized_output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        self.run_command(
-            f"gdalwarp --quiet -overwrite -multi -te {xmin} {ymin} {xmax} {ymax} -r {resampling_algorithm} -s_srs EPSG:{source_srid} -t_srs EPSG:{target_srid} -tr {pixel_size_in_meters} {pixel_size_in_meters} -of GTiff {str(input_file)} {str(resized_output_file_path)}"
+        await self.run_command(
+            "gdalwarp",
+            [
+                "--quiet",
+                "-overwrite",
+                "-multi",
+                "-te",
+                str(xmin),
+                str(ymin),
+                str(xmax),
+                str(ymax),
+                "-r",
+                str(resampling_algorithm),
+                "-s_srs",
+                f"EPSG:{source_srid}",
+                "-t_srs",
+                f"EPSG:{target_srid}",
+                "-tr",
+                str(pixel_size_in_meters),
+                str(pixel_size_in_meters),
+                "-of",
+                "GTiff",
+                str(input_file),
+                str(resized_output_file_path),
+            ],
         )
 
         clipped_ouput_file_path = (
@@ -490,8 +569,22 @@ class DatasetGenerator:
         )
         clipped_ouput_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.run_command(
-            f"gdalwarp --quiet -overwrite -multi -cutline_srs EPSG:{self.canada_boundary.target_epsg} -cutline {str(self.canada_boundary.boundary_file)} -crop_to_cutline -of GTiff {str(resized_output_file_path)} {str(clipped_ouput_file_path)}"
+        await self.run_command(
+            "gdalwarp",
+            [
+                "--quiet",
+                "-overwrite",
+                "-multi",
+                "-cutline_srs",
+                f"EPSG:{self.canada_boundary.target_epsg}",
+                "-cutline",
+                f"{str(self.canada_boundary.boundary_file)}",
+                "-crop_to_cutline",
+                "-of",
+                "GTiff",
+                str(resized_output_file_path),
+                str(clipped_ouput_file_path),
+            ],
         )
 
         self.cleanup_file(resized_output_file_path)
@@ -683,24 +776,31 @@ class DatasetGenerator:
 
         return output_file_path
 
-    def merge_spatially(
+    async def merge_spatially(
         self, input_folder: Path, month_output_folder: Path, data_info: dict
     ) -> Path:
         netcdf_layer = data_info.get("netcdf_layer", None)
 
-        input_files = " ".join(
-            [
-                get_formatted_file_path(file, netcdf_layer)
-                for file in input_folder.glob(f"*{get_extension('netcdf')}")
-            ]
-        )
+        input_files = [
+            get_formatted_file_path(file, netcdf_layer)
+            for file in input_folder.glob(f"*{get_extension('netcdf')}")
+        ]
         output_file = (
             month_output_folder / Path("merged") / f"merged{get_extension('gtiff')}"
         )
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.run_command(
-            f"gdalwarp --quiet -overwrite -multi -of GTiff {input_files} {str(output_file)}"
+        await self.run_command(
+            "gdalwarp",
+            [
+                "--quiet",
+                "-overwrite",
+                "-multi",
+                "-of",
+                "GTiff",
+                *input_files,
+                str(output_file),
+            ],
         )
 
         return output_file
@@ -731,19 +831,24 @@ class DatasetGenerator:
 
         return range(year_start_inclusive, year_end_inclusive + 1)
 
-    def stack_input_data(
+    async def stack_input_data(
         self,
         output_folder_path: Path,
         target_years_ranges: list,
         input_data_index: dict,
+        semaphore: asyncio.Semaphore,
     ):
         args = [
-            (output_folder_path, target_years_range, input_data_index)
+            (output_folder_path, target_years_range, input_data_index, semaphore)
             for target_years_range in target_years_ranges
         ]
-        nb_processes = min(self.max_cpu_concurrency, len(args))
-        with mp.Pool(processes=nb_processes) as pool:
-            pool.starmap(self.stack_input_data_for_years_range, args)
+        tasks = set()
+        for arg in args:
+            task = asyncio.create_task(self.stack_input_data_for_years_range(arg))
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+
+        await asyncio.gather(*tasks)
 
         for data_name, years_index_or_files_paths in input_data_index.items():
             if isinstance(years_index_or_files_paths, dict):
@@ -752,65 +857,69 @@ class DatasetGenerator:
             else:
                 self.cleanup_files(years_index_or_files_paths)
 
-    def stack_input_data_for_years_range(
+    async def stack_input_data_for_years_range(
         self,
         output_folder_path: Path,
         target_years_range: range,
         input_data_index: dict,
+        semaphore: asyncio.Semaphore,
     ):
-        logger.info(f"Stacking data for target years range {target_years_range}...")
-        logger.opt(lazy=True).debug(
-            "RAM Usage: {used:.2f}/{total:.2f}",
-            used=get_ram_used(),
-            total=get_ram_total(),
-        )
-        target_years_range_output_folder = (
-            output_folder_path
-            / Path("input_data")
-            / Path(f"{target_years_range[0]}_{target_years_range[-1]}")
-        )
-        target_years_range_output_folder.mkdir(parents=True, exist_ok=True)
+        async with semaphore:
+            logger.info(f"Stacking data for target years range {target_years_range}...")
+            logger.opt(lazy=True).debug(
+                "RAM Usage: {used:.2f}/{total:.2f}",
+                used=get_ram_used(),
+                total=get_ram_total(),
+            )
+            target_years_range_output_folder = (
+                output_folder_path
+                / Path("input_data")
+                / Path(f"{target_years_range[0]}_{target_years_range[-1]}")
+            )
+            target_years_range_output_folder.mkdir(parents=True, exist_ok=True)
 
-        first_data_values = list(input_data_index.values())[0]
+            first_data_values = list(input_data_index.values())[0]
 
-        if isinstance(first_data_values, list):
-            tiles = [file_path.stem for file_path in first_data_values]
-        else:
-            tiles = [
-                file_path.stem for file_path in list(first_data_values.values())[0]
-            ]
+            if isinstance(first_data_values, list):
+                tiles = [file_path.stem for file_path in first_data_values]
+            else:
+                tiles = [
+                    file_path.stem for file_path in list(first_data_values.values())[0]
+                ]
 
-        for tile_name in tiles:
+            for tile_name in tiles:
 
-            files_to_stack = []
+                files_to_stack = []
 
-            for data_name, years_index in input_data_index.items():
-                is_affected_by_fires = self.get_is_affected_by_fires(data_name)
+                for data_name, years_index in input_data_index.items():
+                    is_affected_by_fires = self.get_is_affected_by_fires(data_name)
 
-                data_years_range = (
-                    self.get_dynamic_input_data_years_range_for_target_years_range(
-                        target_years_range, is_affected_by_fires
+                    data_years_range = (
+                        self.get_dynamic_input_data_years_range_for_target_years_range(
+                            target_years_range, is_affected_by_fires
+                        )
                     )
+
+                    fill_values = self.get_fill_values(data_name)
+
+                    for year in data_years_range:
+                        if isinstance(years_index, list):
+                            data_tiles_paths = years_index
+                        else:
+                            data_tiles_paths = list(years_index[year])
+                        matching_tile_path = next(
+                            filter(
+                                lambda path: path.stem == tile_name, data_tiles_paths
+                            )
+                        )
+                        self.update_nodata_value(matching_tile_path, fill_values)
+                        files_to_stack.append(str(matching_tile_path))
+
+                await self.stack_files(
+                    files_to_stack, target_years_range_output_folder, tile_name
                 )
 
-                fill_values = self.get_fill_values(data_name)
-
-                for year in data_years_range:
-                    if isinstance(years_index, list):
-                        data_tiles_paths = years_index
-                    else:
-                        data_tiles_paths = list(years_index[year])
-                    matching_tile_path = next(
-                        filter(lambda path: path.stem == tile_name, data_tiles_paths)
-                    )
-                    self.update_nodata_value(matching_tile_path, fill_values)
-                    files_to_stack.append(str(matching_tile_path))
-
-            self.stack_files(
-                files_to_stack, target_years_range_output_folder, tile_name
-            )
-
-        logger.complete()
+            await logger.complete()
 
     def get_dynamic_input_data_years_range_for_target_years_range(
         self,
@@ -868,19 +977,34 @@ class DatasetGenerator:
 
         del dataset
 
-    def stack_files(self, files_to_stack: list, output_folder: Path, tile_name: str):
+    async def stack_files(
+        self, files_to_stack: list, output_folder: Path, tile_name: str
+    ):
         output_file = output_folder / f"{tile_name}{get_extension('gtiff')}"
 
         vrt_file = output_file.with_suffix(".vrt")
 
-        gdalbuildvrt_cmd = (
-            f"gdalbuildvrt -overwrite -separate {str(vrt_file)} "
-            + " ".join(files_to_stack)
+        await self.run_command(
+            "gdalbuildvrt",
+            [
+                "-overwrite",
+                "-separate",
+                str(vrt_file),
+                *(files_to_stack),
+            ],
         )
-        self.run_command(gdalbuildvrt_cmd)
 
-        self.run_command(
-            f"gdal_translate -strict -ot Float32 -of GTiff {str(vrt_file)} {str(output_file)}"
+        await self.run_command(
+            "gdal_translate",
+            [
+                "-strict",
+                "-ot",
+                "Float32",
+                "-of",
+                "GTiff",
+                str(vrt_file),
+                str(output_file),
+            ],
         )
 
         vrt_file.unlink()
@@ -898,21 +1022,31 @@ class DatasetGenerator:
 
         raise ValueError(f"Data name {data_name} not found in input data!")
 
-    def run_command(self, command: str):
+    async def run_command(self, program: str, commands: list):
         tries = 1
         max_tries = 100
         for _ in range(max_tries):
             try:
-                subprocess.run(
-                    command, check=True, shell=True, stdout=subprocess.DEVNULL
+                proc = await asyncio.create_subprocess_exec(
+                    program,
+                    *commands,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
                 )
+                _, stderr = await proc.communicate()
+
+                error = stderr.decode()
+                if error != "":
+                    logger.error(error)
+                    raise Exception(error)
+
                 return
             except Exception as e:
                 logger.error(
-                    f"({tries}/{max_tries}) Command {command[:250]} failed: {e}, retrying..."
+                    f"({tries}/{max_tries}) Program {program} failed executing commands {commands[:5]}: {e}, retrying..."
                 )
                 tries += 1
                 time.sleep(tries * 5)
-        exception_message = f"Command {command[:250]} failed after {tries} tries!"
+        exception_message = f"Program {program} failed executing commands {commands} after {tries} tries!"
         logger.exception(exception_message)
         raise Exception(exception_message)
