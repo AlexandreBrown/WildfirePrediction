@@ -267,75 +267,95 @@ class DatasetGenerator:
         with logger.contextualize(data_name=data_name):
             is_affected_by_fires = data_info.get("is_affected_by_fires", False)
 
-            data_years_index = {}
-
+            tasks = set()
             for year in self.get_dynamic_input_data_total_years_extent(
                 is_affected_by_fires
             ):
-                with logger.contextualize(year=year):
-                    tasks = set()
-                    for month in self.get_months_range():
-                        task = asyncio.create_task(
-                            self.process_dynamic_input_data_month(
-                                output_folder_path,
-                                data_name,
-                                data_info,
-                                year,
-                                month,
-                                semaphore,
-                            )
-                        )
-                        tasks.add(task)
-                        task.add_done_callback(tasks.discard)
-
-                    months_files_paths = await asyncio.gather(*tasks)
-
-                    year_output_folder = (
-                        output_folder_path / Path(f"{year}") / data_name
-                    )
-                    year_output_folder.mkdir(parents=True, exist_ok=True)
-
-                    logger.info("Aggregating data for year...")
-                    yearly_aggregated_file_path = await asyncio.to_thread(
-                        self.aggregate_files,
-                        months_files_paths,
-                        year_output_folder,
+                task = asyncio.create_task(
+                    self.process_dynamic_input_data_year(
+                        output_folder_path,
+                        data_name,
                         data_info,
+                        big_tiles_boundaries,
+                        year,
+                        semaphore,
                     )
-                    logger.opt(lazy=True).debug(
-                        "RAM Usage: {used:.2f}/{total:.2f}",
-                        used=get_ram_used(),
-                        total=get_ram_total(),
-                    )
-                    self.cleanup_files(months_files_paths)
+                )
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
 
-                    logger.info("Resizing, reprojecting and clipping raster...")
-                    data_type = data_info.get("data_type", None)
-                    clipped_file_path = await self.resize_reproject_clip_raster(
-                        yearly_aggregated_file_path,
-                        year_output_folder,
-                        data_type,
-                        source_srid=self.config["projections"]["source_srid"],
-                    )
-                    logger.opt(lazy=True).debug(
-                        "RAM Usage: {used:.2f}/{total:.2f}",
-                        used=get_ram_used(),
-                        total=get_ram_total(),
-                    )
-                    self.cleanup_file(yearly_aggregated_file_path)
+            results = await asyncio.gather(*tasks)
 
-                    logger.info("Creating tiles...")
-                    tiles_files_paths = await self.create_tiles(
-                        clipped_file_path, year_output_folder, big_tiles_boundaries
-                    )
-                    if data_name not in data_years_index.keys():
-                        data_years_index[data_name] = {}
-                    data_years_index[data_name][year] = tiles_files_paths
-                    self.cleanup_file(clipped_file_path)
+            data_years_index = {data_name: {}}
 
-        await logger.complete()
+            for year, tiles_files_paths in results:
+                data_years_index[data_name][year] = tiles_files_paths
+
+            await logger.complete()
 
         return data_years_index
+
+    async def process_dynamic_input_data_year(
+        self,
+        output_folder_path: Path,
+        data_name: str,
+        data_info: dict,
+        big_tiles_boundaries: gpd.GeoDataFrame,
+        year: int,
+        semaphore: asyncio.Semaphore,
+    ) -> tuple:
+        async with semaphore:
+            with logger.contextualize(year=year):
+                months_files_paths = []
+                for month in self.get_months_range():
+                    month_files_paths = await self.process_dynamic_input_data_month(
+                        output_folder_path,
+                        data_name,
+                        data_info,
+                        year,
+                        month,
+                    )
+                    months_files_paths.append(month_files_paths)
+
+                year_output_folder = output_folder_path / Path(f"{year}") / data_name
+                year_output_folder.mkdir(parents=True, exist_ok=True)
+
+                logger.info("Aggregating data for year...")
+                yearly_aggregated_file_path = await asyncio.to_thread(
+                    self.aggregate_files,
+                    months_files_paths,
+                    year_output_folder,
+                    data_info,
+                )
+                logger.opt(lazy=True).debug(
+                    "RAM Usage: {used:.2f}/{total:.2f}",
+                    used=get_ram_used(),
+                    total=get_ram_total(),
+                )
+                self.cleanup_files(months_files_paths)
+
+                logger.info("Resizing, reprojecting and clipping raster...")
+                data_type = data_info.get("data_type", None)
+                clipped_file_path = await self.resize_reproject_clip_raster(
+                    yearly_aggregated_file_path,
+                    year_output_folder,
+                    data_type,
+                    source_srid=self.config["projections"]["source_srid"],
+                )
+                logger.opt(lazy=True).debug(
+                    "RAM Usage: {used:.2f}/{total:.2f}",
+                    used=get_ram_used(),
+                    total=get_ram_total(),
+                )
+                self.cleanup_file(yearly_aggregated_file_path)
+
+                logger.info("Creating tiles...")
+                tiles_files_paths = await self.create_tiles(
+                    clipped_file_path, year_output_folder, big_tiles_boundaries
+                )
+                self.cleanup_file(clipped_file_path)
+
+                return year, tiles_files_paths
 
     async def process_dynamic_input_data_month(
         self,
@@ -344,54 +364,52 @@ class DatasetGenerator:
         data_info: dict,
         year: int,
         month: int,
-        semaphore: asyncio.Semaphore,
     ):
-        async with semaphore:
-            with logger.contextualize(month=month):
-                data_input_folder = (
-                    self.input_folder_path
-                    / Path(f"{year}")
-                    / Path(f"{month}")
-                    / Path(f"{data_name}")
-                )
-                month_output_folder = (
-                    output_folder_path
-                    / Path(f"{year}")
-                    / Path(f"{month}")
-                    / Path(f"{data_name}")
-                )
+        with logger.contextualize(month=month):
+            data_input_folder = (
+                self.input_folder_path
+                / Path(f"{year}")
+                / Path(f"{month}")
+                / Path(f"{data_name}")
+            )
+            month_output_folder = (
+                output_folder_path
+                / Path(f"{year}")
+                / Path(f"{month}")
+                / Path(f"{data_name}")
+            )
 
-                logger.info("Merging files...")
-                logger.opt(lazy=True).debug(
-                    "RAM Usage: {used:.2f}/{total:.2f}",
-                    used=get_ram_used(),
-                    total=get_ram_total(),
-                )
-                merged_file_path = await self.merge_spatially(
-                    data_input_folder,
-                    month_output_folder,
-                    data_info,
-                )
-                logger.opt(lazy=True).debug(
-                    "RAM Usage: {used:.2f}/{total:.2f}",
-                    used=get_ram_used(),
-                    total=get_ram_total(),
-                )
+            logger.info("Merging files...")
+            logger.opt(lazy=True).debug(
+                "RAM Usage: {used:.2f}/{total:.2f}",
+                used=get_ram_used(),
+                total=get_ram_total(),
+            )
+            merged_file_path = await self.merge_spatially(
+                data_input_folder,
+                month_output_folder,
+                data_info,
+            )
+            logger.opt(lazy=True).debug(
+                "RAM Usage: {used:.2f}/{total:.2f}",
+                used=get_ram_used(),
+                total=get_ram_total(),
+            )
 
-                logger.info("Aggregating bands for month...")
-                month_aggregated_file_path = await asyncio.to_thread(
-                    self.aggregate_file,
-                    merged_file_path,
-                    month_output_folder,
-                    data_info,
-                )
-                logger.opt(lazy=True).debug(
-                    "RAM Usage: {used:.2f}/{total:.2f}",
-                    used=get_ram_used(),
-                    total=get_ram_total(),
-                )
-                self.cleanup_file(merged_file_path)
-                return month_aggregated_file_path
+            logger.info("Aggregating bands for month...")
+            month_aggregated_file_path = await asyncio.to_thread(
+                self.aggregate_file,
+                merged_file_path,
+                month_output_folder,
+                data_info,
+            )
+            logger.opt(lazy=True).debug(
+                "RAM Usage: {used:.2f}/{total:.2f}",
+                used=get_ram_used(),
+                total=get_ram_total(),
+            )
+            self.cleanup_file(merged_file_path)
+            return month_aggregated_file_path
 
     def cleanup_files(self, files: list):
         for file in files:

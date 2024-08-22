@@ -20,7 +20,7 @@ projections:
 paths:
   input_folder_path: "/media/user/c6e0bc12-4124-418d-9053-82363c4565f8/WildfirePrediction/data/download/"
   output_folder_path: "data/datasets/"
-max_io_concurrency: 16
+max_io_concurrency: 20
 max_cpu_concurrency: 8
 no_data_value: -32768
 cleanup_tmp_folder_on_success: true
