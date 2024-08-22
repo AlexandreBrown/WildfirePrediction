@@ -253,10 +253,8 @@ class DatasetGenerator:
         )
 
     async def _process_input_data(self, *args):
-        semaphore = args[-1]
-        async with semaphore:
-            processing_fn = args[0]
-            return await processing_fn(*args[1:])
+        processing_fn = args[0]
+        return await processing_fn(*args[1:])
 
     async def process_dynamic_input_data(
         self,
@@ -412,65 +410,66 @@ class DatasetGenerator:
         big_tiles_boundaries: gpd.GeoDataFrame,
         semaphore: asyncio.Semaphore,
     ):
-        with logger.contextualize(data_name=data_name):
+        async with semaphore:
+            with logger.contextualize(data_name=data_name):
 
-            static_input_data_folder_name = "static_data"
+                static_input_data_folder_name = "static_data"
 
-            input_folder_path = (
-                Path(self.input_folder_path)
-                / Path(static_input_data_folder_name)
-                / Path(f"{data_name}")
-            )
+                input_folder_path = (
+                    Path(self.input_folder_path)
+                    / Path(static_input_data_folder_name)
+                    / Path(f"{data_name}")
+                )
 
-            static_output_folder_path = (
-                output_folder_path
-                / Path(static_input_data_folder_name)
-                / Path(data_name)
-            )
-            static_output_folder_path.mkdir(parents=True, exist_ok=True)
+                static_output_folder_path = (
+                    output_folder_path
+                    / Path(static_input_data_folder_name)
+                    / Path(data_name)
+                )
+                static_output_folder_path.mkdir(parents=True, exist_ok=True)
 
-            logger.info("Merging files...")
-            merged_file_path = await self.merge_spatially(
-                input_folder_path,
-                static_output_folder_path,
-                data_info,
-            )
+                logger.info("Merging files...")
+                merged_file_path = await self.merge_spatially(
+                    input_folder_path,
+                    static_output_folder_path,
+                    data_info,
+                )
+                logger.opt(lazy=True).debug(
+                    "RAM Usage: {used:.2f}/{total:.2f}",
+                    used=get_ram_used(),
+                    total=get_ram_total(),
+                )
+
+                logger.info("Resizing, reprojecting and clipping raster...")
+                data_type = "categorical"
+                clipped_file_path = await self.resize_reproject_clip_raster(
+                    merged_file_path,
+                    static_output_folder_path,
+                    data_type,
+                    source_srid=self.config["projections"]["source_srid"],
+                )
+                logger.opt(lazy=True).debug(
+                    "RAM Usage: {used:.2f}/{total:.2f}",
+                    used=get_ram_used(),
+                    total=get_ram_total(),
+                )
+                self.cleanup_file(merged_file_path)
+
+                logger.info("Creating tiles...")
+                tiles_files_paths = await self.create_tiles(
+                    clipped_file_path, static_output_folder_path, big_tiles_boundaries
+                )
+                self.cleanup_file(clipped_file_path)
+
             logger.opt(lazy=True).debug(
                 "RAM Usage: {used:.2f}/{total:.2f}",
                 used=get_ram_used(),
                 total=get_ram_total(),
             )
 
-            logger.info("Resizing, reprojecting and clipping raster...")
-            data_type = "categorical"
-            clipped_file_path = await self.resize_reproject_clip_raster(
-                merged_file_path,
-                static_output_folder_path,
-                data_type,
-                source_srid=self.config["projections"]["source_srid"],
-            )
-            logger.opt(lazy=True).debug(
-                "RAM Usage: {used:.2f}/{total:.2f}",
-                used=get_ram_used(),
-                total=get_ram_total(),
-            )
-            self.cleanup_file(merged_file_path)
+            await logger.complete()
 
-            logger.info("Creating tiles...")
-            tiles_files_paths = await self.create_tiles(
-                clipped_file_path, static_output_folder_path, big_tiles_boundaries
-            )
-            self.cleanup_file(clipped_file_path)
-
-        logger.opt(lazy=True).debug(
-            "RAM Usage: {used:.2f}/{total:.2f}",
-            used=get_ram_used(),
-            total=get_ram_total(),
-        )
-
-        await logger.complete()
-
-        return {data_name: tiles_files_paths}
+            return {data_name: tiles_files_paths}
 
     async def create_tiles(
         self,
