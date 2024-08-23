@@ -1,15 +1,20 @@
 # Wildfire Prediction
 Canada Wildfire Prediction Using Deep Learning.  
-The objective is to predict the future fire occurrences for the next years given various inputs from the past years and current years (current years only for data that is not impacted by fires).
+The objective is to predict the future fire occurrences for the next year given various inputs from the past year and current year.    
+The problem of wildfire prediction is defined as semantic segmentation problem here.  
+The type of input data has an impact on the temporal extent chosen as input to the model.  
+For instance, vegetation data **prior** to the period to predict is used while weather data and any data that is not affected by fires is taken from the period to predict.  
+As an example, to predict the period 2023, we use vegetation data from 2022 and weather data from 2023.
 
 # Data  
 ## Boundaries
-- [Canada Boundary Shapefile](https://open.canada.ca/data/en/dataset/a883eb14-0c0e-45c4-b8c4-b54c4a819edb)  
+- The boundary of Canada is used to train the model and to generate predictions 
+  - Source : [Canada Boundary Shapefile](https://open.canada.ca/data/en/dataset/a883eb14-0c0e-45c4-b8c4-b54c4a819edb)  
 
 ## Input Data  
-The model receives as input the following data (we stack the data from multiple years).  
-For data that is not affected by fires (eg: weather data), we use the data for the current year and for data that is affected by fires (eg: vegetation data), we use the data from a previous year(s).  
-For instance, if we want to predict the wildfires for the year 2005, then we will use the weather data from 2005 and the vegetation data from 2004 (or 2004 and 2003 if the history window is longer, this is configurable when training).   
+The data listed below is the input data used as input for the model (we stack each input data).  
+For data that is not affected by fires (eg: weather data), we use the data from the current year and for data that is affected by fires (eg: vegetation data), we use the data from a previous year.  
+For instance, if we want to predict the wildfires for the year 2005, then we will use the weather data from 2005 and the vegetation data from 2004.
 ### Dynamic Input Data  
 Dynamic input data is data that changes over time. This data is updated on a daily/weekly/bi-weekly/monthly/yearly basis (depending on which data input).
 #### Vegetation
@@ -51,16 +56,23 @@ Static input data is data that does not change over time or for which we only ha
   - Permanent Water Bodies
 
 ### Data Aggregation  
-- All the data that is not already yearly based is averaged to have a yearly temporal granularity.  
+- All the data that is not already yearly based is aggregated to have a yearly temporal granularity.  
 
 ## Target  
-- [NBAC Canada Fire Polygons](https://cwfis.cfs.nrcan.gc.ca/datamart)
-- Currently the model is trained to predict the future wildfire occurrences for the next X years.  
+- The target of the model is fire polygons which represent fire occurrence for a specific area at a given time.  
+  - Source : [NBAC Canada Fire Polygons](https://cwfis.cfs.nrcan.gc.ca/datamart)
+- Currently the model is trained to predict the future wildfire occurrences for the next year.  
+- A probability between 0 and 1 is assigned to each pixel where 1 means the model predicted that there is a 100% probability that the area defined by this pixel will burn in the next year.  
 
 # End-To-End Pipeline
 ## Prerequisites
 ### Conda/Micromamba
 - Download and install conda or micromamba (recommended) : https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html
+#### GPU
+- To use GPU, make sure that `ndvidia::pytorch-cuda` is not commented inside `environment.yaml` so that the gpu dependencies will be installed and **comment out `pytorch::cpuonly`**
+#### CPU  
+- To use CPU, make sure that `pytorch::cpuonly` is not commented inside `environment.yaml` so that the cpu dependencies will be installed and **comment out `ndvidia::pytorch-cuda`**  
+#### Create Virtual Environment
 - Create a new environment using the `environment.yaml` file from this repository (see [this guide](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html#conda-yaml-spec-files)).
 - Activate your new environment (see [this guide](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html#quickstarts)).
 
@@ -104,7 +116,7 @@ To do so, one only needs to execute one script, **make sure you are at the root 
    Each product can have one or more layers, the download_data config allows us to specify which products and which layers from each product to download. The layer name must match the exact layer name (see the exporation notebook for more details on how to get this value).  
 3. Run the `download_data` script :  
    ```bash
-   python -m download_data
+   python download_data.py
    ```
    Note : If an error occurred during the execution (eg: third party server went down/download failed), you can avoid re-submitting processing requests that were already sent before the crash. To do so, look under `logs/download_data` and copy the path to the folder that was generated and put this path under `logs.nasa_earth_data_logs_folder_path`.  
    For instance, if I have the following : `logs/download_data/20240711-081839` from my previous execution, then I would update the `config/download_data.yaml` to have :  
@@ -139,7 +151,7 @@ So each big tile represents the data inputs stacked for 1 year for the area deli
     - The sources names must match the folder name created during the download step. 
 1. Execute the dataset generation script :  
     ```bash
-    python -m generate_dataset
+    python generate_dataset.py
     ```
 
 ### Split Dataset
@@ -151,14 +163,14 @@ So each big tile represents the data inputs stacked for 1 year for the area deli
     ```shell
     export PROJ_LIB="$CONDA_PREFIX/share/proj/"
     ```
-1. Update the config to specify where the data is :  
+1. Update the config file `config/split_dataset.yaml` to specify where the data is :  
     - Set `data.input_data_periods_folders_paths` to a list of string corresponding to the paths to the folder for the range of the input data (eg: '.../2023_2023').  
       - This list is the list of all the periods (not just train).
     - Do the same for `data.target_periods_folders_paths`
 
 1. Run the train script :  
     ```shell
-    python -m split_dataset
+    python split_dataset.py
     ```
   
 Note : The script will generate a json file called `data_split_info.json` under the output directory of the data split. This file is used by the training script to load the data so take note of its location.
@@ -168,15 +180,36 @@ Note : The script will generate a json file called `data_split_info.json` under 
     ```bash
     export PYTHONPATH=$(pwd)/src
     ```
-1. Update the config to specify where the data_split_info file is :  
+1. Update the config file `config/train.yaml` to specify where the data_split_info file is :  
     - Set `data.split_info_file_path` to a string representing the path of the json file.
 
 1. Run the train script :  
     ```shell
-    python -m train
+    python train.py
     ```
   
 Note : The script outputs training results under the output folder.
+
+### Predict
+1. Add the repo source code to the python path (make sure you are at the root of the repository) :  
+    ```bash
+    export PYTHONPATH=$(pwd)/src
+    ```
+1. Update the config file `config/predict.yaml` to specify where the data_split_info file is :  
+    - Set `data.split_info_file_path` to a string representing the path of the json file.
+
+1. Update the config file `config/predict.yaml` to specify where the input data is :
+    - Set `data.input_data_folder_path` to a string representing the path to the input_data folder
+
+1. Run the predict script :  
+    ```shell
+    python predict.py
+    ```
+  
+Note : The script outputs 1 raster file which corresponds to the prediction map where each pixel has a probability of future wildfire occurrence assigned to it.
+
+# Deep Learning Model
+- The repository features a custom implementation of a [U-Net Convolutional Neural Network](https://arxiv.org/abs/1505.04597).
 
 # Contributing  
 1. Follow the [prerequisites](#prerequisites) steps.
