@@ -1,4 +1,6 @@
 debug: false
+run:
+  name: "generate_dataset_${now:%Y-%m-%d_%H-%M-%S}"
 periods:
   target_year_start_inclusive: 2010
   target_year_end_inclusive: 2023

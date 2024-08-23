@@ -2,7 +2,6 @@ import torch
 import numpy as np
 import hydra
 import json
-import sys
 from losses.loss_factory import create_loss
 from models.cnn.unet.model import UnetModel
 from datasets.wildfire_data_module import WildfireDataModule
@@ -13,33 +12,18 @@ from omegaconf import DictConfig, OmegaConf
 from trainers.semantic_segmentation_trainer import SemanticSegmentationTrainer
 from loggers.factory import LoggerFactory
 from comet_ml.exceptions import InterruptedExperiment
-from logging_utils.formats import default_project_format
+from logging_utils.logging import setup_logger
 
 
 @hydra.main(version_base=None, config_path="config", config_name="train")
 def main(cfg: DictConfig):
-
-    logger.remove(0)
-
     run_name = cfg["run"]["name"]
-    log_folder_path = Path(f"logs/train/{run_name}/")
-    log_folder_path.mkdir(parents=True, exist_ok=True)
-    log_file_name = log_folder_path / "output.log"
-    logger.add(
-        str(log_file_name),
-        format=default_project_format,
-        colorize=True,
-        level="DEBUG" if cfg.debug else "INFO",
-    )
-    logger.add(
-        sys.stdout,
-        format=default_project_format,
-        colorize=True,
-        level="DEBUG" if cfg.debug else "INFO",
-    )
-
+    debug = cfg["debug"]
     logger.info(f"Run name: {run_name}")
-    logger.info(f"Debug : {cfg.debug}")
+    logger.info(f"Debug : {debug}")
+
+    setup_logger(logger, run_name, debug)
+
     logger.info(f"Seed: {cfg.seed}")
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -71,7 +55,7 @@ def main(cfg: DictConfig):
         data_loading_num_workers=cfg["data"]["data_loading_num_workers"],
     )
 
-    data_module.setup()
+    data_module.setup(stage="fit")
 
     train_dl = data_module.train_dataloader()
     val_dl = data_module.val_dataloader()

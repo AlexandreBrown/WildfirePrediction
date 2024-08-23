@@ -6,6 +6,7 @@ from pathlib import Path
 from torch.utils.data import Dataset
 from osgeo import gdal
 from raster_io.read import get_extension
+from tensordict import TensorDict
 
 
 class WildfireDataset(Dataset):
@@ -15,7 +16,7 @@ class WildfireDataset(Dataset):
         target_folder_path: Optional[Path] = None,
         input_data_indexes_to_remove: list = [],
         extension: str = get_extension("gtiff"),
-        transform = None,
+        transform=None,
     ):
         gdal.UseExceptions()
         self.input_folder_path = input_folder_path
@@ -35,24 +36,48 @@ class WildfireDataset(Dataset):
     def __len__(self) -> int:
         return len(self.input_file_paths)
 
-    def __getitem__(self, idx: int) -> tuple:
+    def __getitem__(self, idx: int) -> TensorDict:
         input_dataset = gdal.Open(str(self.input_file_paths[idx]), gdal.GA_ReadOnly)
-        input_data_numpy = np.delete(input_dataset.ReadAsArray(), self.input_data_indexes_to_remove, axis=0)
-        
-        input_data_img = tv_tensors.Image(torch.from_numpy(input_data_numpy), dtype=torch.float32, requires_grad=False)
+        input_data_numpy = np.delete(
+            input_dataset.ReadAsArray(), self.input_data_indexes_to_remove, axis=0
+        )
+
+        input_data_img = tv_tensors.Image(
+            torch.from_numpy(input_data_numpy), dtype=torch.float32, requires_grad=False
+        )
+
+        projection = input_dataset.GetProjection()
+        geotransform = input_dataset.GetGeoTransform()
 
         del input_dataset
 
         if self.target_folder_path is None:
-            return input_data_img
-        
+            if self.transform:
+                input_data_img = self.transform(input_data_img)
+
+            output = TensorDict(
+                image=input_data_img,
+                projection=projection,
+                geotransform=geotransform,
+            )
+            return output
+
         target_dataset = gdal.Open(str(self.target_file_paths[idx]))
         target_data_numpy = target_dataset.ReadAsArray()
-        target_mask = tv_tensors.Mask(torch.from_numpy(target_data_numpy), dtype=torch.long, requires_grad=False)
+        target_mask = tv_tensors.Mask(
+            torch.from_numpy(target_data_numpy), dtype=torch.long, requires_grad=False
+        )
 
         del target_dataset
 
         if self.transform:
             input_data_img, target_mask = self.transform(input_data_img, target_mask)
 
-        return input_data_img, target_mask
+        output = TensorDict(
+            image=input_data_img,
+            mask=target_mask,
+            projection=projection,
+            geotransform=geotransform,
+        )
+
+        return output

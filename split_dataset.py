@@ -4,10 +4,17 @@ from datasets.wildfire_data_module import WildfireDataModule
 from pathlib import Path
 from loguru import logger
 from omegaconf import DictConfig
+from logging_utils.logging import setup_logger
 
 
 @hydra.main(version_base=None, config_path="config", config_name="split_dataset")
 def main(cfg: DictConfig):
+    run_name = cfg["run"]["name"]
+    debug = cfg["debug"]
+    logger.info(f"Run name: {run_name}")
+    logger.info(f"Debug : {debug}")
+
+    setup_logger(logger, run_name, debug)
 
     output_folder_path = Path(cfg["data"]["output_folder_path"]) / Path(
         cfg["run"]["name"]

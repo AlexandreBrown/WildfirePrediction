@@ -125,11 +125,11 @@ class SemanticSegmentationTrainer:
 
         train_loader = tqdm(self.train_dl, desc="Training", leave=False)
 
-        for X, y in train_loader:
+        for train_data in train_loader:
             self.train_step += 1
 
-            X = X.to(self.device)
-            y = y.to(self.device)
+            X = train_data["image"].to(self.device)
+            y = train_data["mask"].to(self.device)
 
             logger.debug(f"Predicting train batch X ({X.shape}) y ({y.shape})...")
             y_hat = self.model(X)
@@ -178,10 +178,10 @@ class SemanticSegmentationTrainer:
         val_loader = tqdm(self.val_dl, desc="Validation", leave=False)
 
         with torch.no_grad():
-            for X, y in val_loader:
+            for val_data in val_loader:
 
-                X = X.to(self.device)
-                y = y.to(self.device)
+                X = val_data["image"].to(self.device)
+                y = val_data["mask"].to(self.device)
 
                 y_hat = self.model(X)
                 y_hat = torch.squeeze(y_hat, dim=1)
@@ -231,20 +231,24 @@ class SemanticSegmentationTrainer:
             self.train_dl != test_dl and self.val_dl != test_dl
         ), "Test set should be different from train and val sets!"
 
+        best_trained_model = self.model.load_state_dict(
+            torch.load(self.best_model_path)
+        ).to(self.device)
+
         test_loss = 0.0
         self.test_dl = test_dl
         self.test_logger = self.logger_factory.create("test_")
 
-        self.model.eval()
+        best_trained_model.eval()
 
         test_loader = tqdm(self.test_dl, desc="Testing", leave=False)
 
-        for X, y in test_loader:
+        for test_data in test_loader:
 
-            X = X.to(self.device)
-            y = y.to(self.device)
+            X = test_data["image"].to(self.device)
+            y = test_data["mask"].to(self.device)
 
-            y_hat = self.model(X)
+            y_hat = best_trained_model(X)
             y_hat = torch.squeeze(y_hat, dim=1)
 
             loss = self.loss(y_hat, y.float())

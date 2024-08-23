@@ -18,8 +18,8 @@ from data_sources.canada_boundary_data_source import CanadaBoundaryDataSource
 from data_sources.nasa_earth_data_api import NasaEarthDataApi
 from data_sources.gov_can_water_bodies_data_source import GovCanWaterBodiesDataSource
 from grid.square_meters_grid import SquareMetersGrid
-from logging_utils.formats import default_project_format
 from raster_io.read import get_extension
+from logging_utils.logging import setup_logger
 
 
 def download_era5_data(cfg: DictConfig):
@@ -234,14 +234,12 @@ def download_gov_can_data(cfg: DictConfig):
 
 @hydra.main(version_base=None, config_path="config", config_name="download_data")
 def main(cfg: DictConfig):
-    logger.remove(0)
-    logger.add(
-        sys.stdout,
-        format=default_project_format,
-        colorize=True,
-        level="DEBUG" if cfg.debug else "INFO",
-        enqueue=True,
-    )
+    run_name = cfg["run"]["name"]
+    debug = cfg["debug"]
+    logger.info(f"Run name: {run_name}")
+    logger.info(f"Debug : {debug}")
+
+    setup_logger(logger, run_name, debug)
 
     if "era5" in cfg.sources:
         logger.info("Downloading ERA5 data...")

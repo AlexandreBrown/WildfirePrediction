@@ -34,6 +34,7 @@ class WildfireDataModule:
         train_folder_path: Optional[Path] = None,
         val_folder_path: Optional[Path] = None,
         test_folder_path: Optional[Path] = None,
+        predict_folder_path: Optional[Path] = None,
         train_stats: Optional[dict] = None,
         data_loading_num_workers: int = 4,
     ):
@@ -56,10 +57,12 @@ class WildfireDataModule:
         self.train_folder_path = train_folder_path
         self.val_folder_path = val_folder_path
         self.test_folder_path = test_folder_path
+        self.predict_folder_path = predict_folder_path
         self.data_loading_num_workers = data_loading_num_workers
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+        self.predict_dataset = None
         self.input_folder_name = "input"
         self.target_folder_name = "target"
 
@@ -262,22 +265,31 @@ class WildfireDataModule:
 
         return sorted(files)
 
-    def setup(self):
+    def setup(self, stage: str):
         logger.info("Setting up data module...")
 
-        logger.info("Creating train dataset...")
-        train_transform = self.get_train_transform()
-        self.train_dataset = self.create_dataset(
-            self.train_folder_path, train_transform
-        )
+        if stage == "fit":
+            logger.info("Creating train dataset...")
+            train_transform = self.get_train_transform()
+            self.train_dataset = self.create_dataset(
+                self.train_folder_path, train_transform
+            )
 
-        logger.info("Creating validation dataset...")
-        val_transform = self.get_eval_transform()
-        self.val_dataset = self.create_dataset(self.val_folder_path, val_transform)
+            logger.info("Creating validation dataset...")
+            val_transform = self.get_eval_transform()
+            self.val_dataset = self.create_dataset(self.val_folder_path, val_transform)
 
-        logger.info("Creating test dataset...")
-        test_transform = self.get_eval_transform()
-        self.test_dataset = self.create_dataset(self.test_folder_path, test_transform)
+            logger.info("Creating test dataset...")
+            test_transform = self.get_eval_transform()
+            self.test_dataset = self.create_dataset(
+                self.test_folder_path, test_transform
+            )
+        elif stage == "predict":
+            logger.info("Creating predict dataset...")
+            predict_transform = self.get_eval_transform()
+            self.predict_dataset = self.create_dataset(
+                self.predict_folder_path, predict_transform, has_target=False
+            )
 
         logger.success("Data module setup completed!")
 
@@ -320,9 +332,14 @@ class WildfireDataModule:
         self,
         data_folder: Path,
         transform=None,
+        has_target: bool = True,
     ):
         input_folder_path = data_folder / self.input_folder_name
-        target_folder = data_folder / self.target_folder_name
+
+        if has_target:
+            target_folder = data_folder / self.target_folder_name
+        else:
+            target_folder = None
 
         return WildfireDataset(
             input_folder_path=input_folder_path,
@@ -350,6 +367,14 @@ class WildfireDataModule:
     def test_dataloader(self):
         return DataLoader(
             self.test_dataset,
+            batch_size=self.eval_batch_size,
+            shuffle=False,
+            num_workers=self.data_loading_num_workers,
+        )
+
+    def predict_dataloader(self):
+        return DataLoader(
+            self.predict_dataset,
             batch_size=self.eval_batch_size,
             shuffle=False,
             num_workers=self.data_loading_num_workers,

@@ -10,32 +10,17 @@ from data_sources.canada_boundary_data_source import CanadaBoundaryDataSource
 from grid.square_meters_grid import SquareMetersGrid
 from datasets.dataset_generator import DatasetGenerator
 from pathlib import Path
-from logging_utils.formats import default_project_format
+from logging_utils.logging import setup_logger
 
 
 @hydra.main(version_base=None, config_path="config", config_name="generate_dataset")
 def main(cfg: DictConfig):
-    logger.remove(0)
+    run_name = cfg["run"]["name"]
+    debug = cfg["debug"]
+    logger.info(f"Run name: {run_name}")
+    logger.info(f"Debug : {debug}")
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_folder_path = Path(f"logs/generate_dataset/{timestamp}/")
-    log_folder_path.mkdir(parents=True, exist_ok=True)
-    log_file_name = log_folder_path / "output.log"
-
-    logger.add(
-        str(log_file_name),
-        format=default_project_format,
-        colorize=True,
-        level="DEBUG" if cfg.debug else "INFO",
-        enqueue=True,
-    )
-    logger.add(
-        sys.stdout,
-        format=default_project_format,
-        colorize=True,
-        level="DEBUG" if cfg.debug else "INFO",
-        enqueue=True,
-    )
+    setup_logger(logger, run_name, debug, enqueue=True)
 
     logger.info(f"Debug : {cfg.debug}")
 

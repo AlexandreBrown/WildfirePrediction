@@ -20,6 +20,7 @@ dependencies:
   - conda-forge::torchmetrics=1.4.0.post0
   - conda-forge::torchinfo=1.8.0
   - conda-forge::tqdm=4.66.5
+  - conda-forge::tensordict=0.5.0
   - comet_ml::comet_ml=3.44.4
   - pytorch::pytorch
   - pytorch::torchvision
