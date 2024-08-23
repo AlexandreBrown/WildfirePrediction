@@ -7,7 +7,6 @@ import shutil
 import asyncio
 import itertools
 import subprocess
-import sys
 import time
 import geopandas as gpd
 from loguru import logger
