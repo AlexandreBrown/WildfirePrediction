@@ -38,8 +38,6 @@ Dynamic input data is data that changes over time. This data is updated on a dai
   - Potential evaporation
 - [ERA5 Reanalysis Surface net solar radiation](https://codes.ecmwf.int/grib/param-db/176)
   - Surface net solar radiation
-- [ERA5 Reanalysis Surface runoff](https://codes.ecmwf.int/grib/param-db/8)
-  - Surface runoff
 - [ERA5 Reanalysis Total precipitation](https://codes.ecmwf.int/grib/param-db/228)
   - Total precipitation
 #### Thematic

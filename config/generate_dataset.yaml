@@ -100,12 +100,6 @@ input_data:
         data_type: "continuous"
         fill_values: [-32767]
         is_affected_by_fires: false
-      era5_reanalysis_surface_runoff:
-        netcdf_layer: ""
-        aggregation_strategy: "average"
-        data_type: "continuous"
-        fill_values: [-32767]
-        is_affected_by_fires: false
       era5_reanalysis_total_precipitation:
         netcdf_layer: ""
         aggregation_strategy: "average"

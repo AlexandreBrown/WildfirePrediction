@@ -2,7 +2,7 @@ debug: false
 run:
   name: "download_data_${now:%Y-%m-%d_%H-%M-%S}"
 periods:
-    year_start_inclusive: 2000
+    year_start_inclusive: 2022
     year_end_inclusive: 2023
     month_start_inclusive: 5
     month_end_inclusive: 10
@@ -22,7 +22,6 @@ sources:
             - 2m_temperature
             - potential_evaporation
             - surface_net_solar_radiation
-            - surface_runoff
             - total_precipitation 
     nasa_earth_data:
         products_layers:
@@ -43,6 +42,6 @@ sources:
         - water_bodies
 
 logs:
-    nasa_earth_data_logs_folder_path: "logs/download_data/20240711-081839/"
+    nasa_earth_data_logs_folder_path: null
 outputs:
     data_output_base_path: "data/download/"
