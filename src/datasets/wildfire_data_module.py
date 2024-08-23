@@ -354,6 +354,7 @@ class WildfireDataModule:
             batch_size=self.train_batch_size,
             shuffle=True,
             num_workers=self.data_loading_num_workers,
+            collate_fn=torch.stack,
         )
 
     def val_dataloader(self):
@@ -362,6 +363,7 @@ class WildfireDataModule:
             batch_size=self.eval_batch_size,
             shuffle=False,
             num_workers=self.data_loading_num_workers,
+            collate_fn=torch.stack,
         )
 
     def test_dataloader(self):
@@ -370,6 +372,7 @@ class WildfireDataModule:
             batch_size=self.eval_batch_size,
             shuffle=False,
             num_workers=self.data_loading_num_workers,
+            collate_fn=torch.stack,
         )
 
     def predict_dataloader(self):
@@ -378,4 +381,5 @@ class WildfireDataModule:
             batch_size=self.eval_batch_size,
             shuffle=False,
             num_workers=self.data_loading_num_workers,
+            collate_fn=torch.stack,
         )
