@@ -7,7 +7,7 @@ from logging_utils.formats import default_project_format
 def setup_logger(logger, run_name: str, debug: bool, enqueue: bool = False):
     logger.remove(0)
 
-    log_folder_path = Path(f"logs/train/{run_name}/")
+    log_folder_path = Path(f"logs/{run_name}/")
     log_folder_path.mkdir(parents=True, exist_ok=True)
     log_file_name = log_folder_path / "output.log"
     logger.add(
