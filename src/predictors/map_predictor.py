@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import asyncio
 from osgeo import gdal
+from osgeo import osr
 from torch.utils.data.dataloader import DataLoader
 from pathlib import Path
 from loguru import logger
@@ -16,12 +17,14 @@ class MapPredictor:
         device: torch.device,
         output_folder_path: Path,
         convert_model_output_to_probabilities: bool = True,
+        data_srid: int = 3978,
     ):
         self.model = model.to(device)
         self.device = device
         self.output_folder_path = output_folder_path
         self.use_probabilities = convert_model_output_to_probabilities
         self.output_folder_path.mkdir(parents=True, exist_ok=True)
+        self.data_srid = data_srid
 
     async def predict(self, dataloader: DataLoader) -> Path:
         logger.info("Predicting...")
@@ -37,9 +40,8 @@ class MapPredictor:
 
         for predict_data in predict_loader:
 
-            images = predict_data["image"].to(self.device)
-            projections = predict_data["projection"]
-            geotransforms = predict_data["geotransform"]
+            images = predict_data.images
+            geotransforms = predict_data.geotransforms
 
             y_hat = self.model(images)
             y_hat = torch.squeeze(y_hat, dim=1)
@@ -48,11 +50,8 @@ class MapPredictor:
                 y_hat = torch.sigmoid(y_hat)
 
             for i, prediction in enumerate(y_hat):
-                projection = projections[i]
                 geotransform = geotransforms[i]
-                predictions_files.append(
-                    self.save_prediction(prediction, projection, geotransform)
-                )
+                predictions_files.append(self.save_prediction(prediction, geotransform))
                 self.predictions_saved += 1
 
         logger.success(f"Generated {self.predictions_saved} predictions!")
@@ -60,7 +59,7 @@ class MapPredictor:
         return await self.merge_predictions_files(predictions_files)
 
     def save_prediction(
-        self, prediction: torch.Tensor, projection, geotransform
+        self, prediction: torch.Tensor, geotransform: torch.Tensor
     ) -> Path:
         driver = gdal.GetDriverByName("GTiff")
         output_file = Path(self.output_folder_path) / Path(
@@ -74,8 +73,10 @@ class MapPredictor:
             1,
             gdal.GDT_Float32,
         )
-        output_dataset.SetProjection(projection)
-        output_dataset.SetGeoTransform(geotransform)
+        srs = osr.SpatialReference()
+        srs.ImportFromEPSG(self.data_srid)
+        output_dataset.SetProjection(srs.ExportToWkt())
+        output_dataset.SetGeoTransform(geotransform.cpu().numpy())
         output_band = output_dataset.GetRasterBand(1)
         output_band.WriteArray(prediction.cpu().numpy())
         output_dataset.FlushCache()

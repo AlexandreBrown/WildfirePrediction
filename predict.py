@@ -31,15 +31,18 @@ def main(cfg: DictConfig):
     train_stats = split_info["train_stats"]
     predict_input_data_folder_path = Path(cfg["data"]["input_data_folder_path"])
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Device: {device}")
+
     logger.info("Creating data module...")
     data_module = WildfireDataModule(
         input_data_indexes_to_remove=cfg["data"]["input_data_indexes_to_remove"],
         eval_batch_size=cfg["predict"]["batch_size"],
-        source_no_data_value=cfg["data"]["source_no_data_value"],
         destination_no_data_value=cfg["data"]["destination_no_data_value"],
         predict_folder_path=predict_input_data_folder_path,
         train_stats=train_stats,
         data_loading_num_workers=cfg["data"]["data_loading_num_workers"],
+        device=device,
     )
 
     logger.info("Setting up data module...")
@@ -57,9 +60,6 @@ def main(cfg: DictConfig):
 
     logger.info("Loading trained model...")
     model.load_state_dict(torch.load(Path(cfg["model"]["trained_model_path"])))
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Device: {device}")
 
     convert_model_output_to_probabilities = cfg["predict"][
         "convert_model_output_to_probabilities"

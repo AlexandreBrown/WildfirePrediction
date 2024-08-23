@@ -128,8 +128,8 @@ class SemanticSegmentationTrainer:
         for train_data in train_loader:
             self.train_step += 1
 
-            X = train_data["image"].to(self.device)
-            y = train_data["mask"].to(self.device)
+            X = train_data.images
+            y = train_data.masks
 
             logger.debug(f"Predicting train batch X ({X.shape}) y ({y.shape})...")
             y_hat = self.model(X)
@@ -180,8 +180,8 @@ class SemanticSegmentationTrainer:
         with torch.no_grad():
             for val_data in val_loader:
 
-                X = val_data["image"].to(self.device)
-                y = val_data["mask"].to(self.device)
+                X = val_data.images
+                y = val_data.masks
 
                 y_hat = self.model(X)
                 y_hat = torch.squeeze(y_hat, dim=1)
@@ -245,8 +245,8 @@ class SemanticSegmentationTrainer:
 
         for test_data in test_loader:
 
-            X = test_data["image"].to(self.device)
-            y = test_data["mask"].to(self.device)
+            X = test_data.images
+            y = test_data.masks
 
             y_hat = best_trained_model(X)
             y_hat = torch.squeeze(y_hat, dim=1)

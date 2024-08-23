@@ -1,5 +1,6 @@
 import hydra
 import json
+import torch
 from datasets.wildfire_data_module import WildfireDataModule
 from pathlib import Path
 from loguru import logger
@@ -30,6 +31,9 @@ def main(cfg: DictConfig):
         Path(p) for p in cfg["data"]["target_periods_folders_paths"]
     ]
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Device: {device}")
+
     data_module = WildfireDataModule(
         input_data_indexes_to_remove=[],
         seed=cfg["seed"],
@@ -40,6 +44,7 @@ def main(cfg: DictConfig):
         val_split=cfg["training"]["val_split"],
         preprocessing_num_workers=cfg["data"]["preprocessing_num_workers"],
         output_folder_path=output_folder_path,
+        device=device,
     )
 
     data_split_info = data_module.split_data()

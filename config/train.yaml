@@ -14,7 +14,6 @@ model:
 output_path: "data/trainings/"
 data:
   split_info_file_path: 'data/splits/holdout_split_2024-08-19_12-32-49/data_split_info.json'
-  source_no_data_value: -32768.0
   destination_no_data_value: -32768.0
   data_loading_num_workers: 1
   input_data_indexes_to_remove: []

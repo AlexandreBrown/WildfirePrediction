@@ -12,7 +12,9 @@ from sklearn.model_selection import train_test_split
 from raster_io.read import get_extension
 from stats.image import ImageStats
 from torchvision.transforms import v2
-from transforms.replace_value_transform import ReplaceValueTransform
+from transforms.replace_value_transform import ReplaceNanValueTransform
+from datasets.wildfire_data import WildfireData
+from datasets.collate import Collate
 
 
 class WildfireDataModule:
@@ -23,7 +25,6 @@ class WildfireDataModule:
         train_batch_size: int = 4,
         eval_batch_size: int = 8,
         model_input_size: int = 256,
-        source_no_data_value: float = -32768.0,
         destination_no_data_value: float = -32768.0,
         input_data_periods_folders_paths: Optional[list] = None,
         target_periods_folders_paths: Optional[list] = None,
@@ -37,6 +38,7 @@ class WildfireDataModule:
         predict_folder_path: Optional[Path] = None,
         train_stats: Optional[dict] = None,
         data_loading_num_workers: int = 4,
+        device: Optional[torch.device] = None,
     ):
         gdal.UseExceptions()
         self.input_data_indexes_to_remove = input_data_indexes_to_remove
@@ -45,7 +47,6 @@ class WildfireDataModule:
         self.eval_batch_size = eval_batch_size
         self.model_input_size = model_input_size
         self.preprocessing_num_workers = preprocessing_num_workers
-        self.source_no_data_value = source_no_data_value
         self.destination_no_data_value = destination_no_data_value
         self.train_stats = train_stats
         self.generator = torch.Generator().manual_seed(seed)
@@ -59,6 +60,7 @@ class WildfireDataModule:
         self.test_folder_path = test_folder_path
         self.predict_folder_path = predict_folder_path
         self.data_loading_num_workers = data_loading_num_workers
+        self.device = device
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
@@ -303,11 +305,10 @@ class WildfireDataModule:
 
         return v2.Compose(
             [
-                ReplaceValueTransform(
-                    value_to_replace=self.source_no_data_value,
+                v2.Normalize(mean=mean, std=std),
+                ReplaceNanValueTransform(
                     replace_value=self.destination_no_data_value,
                 ),
-                v2.Normalize(mean=mean, std=std),
             ]
         )
 
@@ -320,11 +321,10 @@ class WildfireDataModule:
 
         return v2.Compose(
             [
-                ReplaceValueTransform(
-                    value_to_replace=self.source_no_data_value,
+                v2.Normalize(mean=mean, std=std),
+                ReplaceNanValueTransform(
                     replace_value=self.destination_no_data_value,
                 ),
-                v2.Normalize(mean=mean, std=std),
             ]
         )
 
@@ -341,12 +341,20 @@ class WildfireDataModule:
         else:
             target_folder = None
 
-        return WildfireDataset(
+        dataset = WildfireDataset(
             input_folder_path=input_folder_path,
             target_folder_path=target_folder,
             input_data_indexes_to_remove=self.input_data_indexes_to_remove,
             transform=transform,
         )
+
+        efficient_dataset = WildfireData.from_dataset(
+            dataset,
+            num_workers=self.data_loading_num_workers,
+            batch=self.train_batch_size,
+        )
+
+        return efficient_dataset
 
     def train_dataloader(self):
         return DataLoader(
@@ -354,7 +362,7 @@ class WildfireDataModule:
             batch_size=self.train_batch_size,
             shuffle=True,
             num_workers=self.data_loading_num_workers,
-            collate_fn=torch.stack,
+            collate_fn=Collate(device=self.device),
         )
 
     def val_dataloader(self):
@@ -363,7 +371,7 @@ class WildfireDataModule:
             batch_size=self.eval_batch_size,
             shuffle=False,
             num_workers=self.data_loading_num_workers,
-            collate_fn=torch.stack,
+            collate_fn=Collate(device=self.device),
         )
 
     def test_dataloader(self):
@@ -372,7 +380,7 @@ class WildfireDataModule:
             batch_size=self.eval_batch_size,
             shuffle=False,
             num_workers=self.data_loading_num_workers,
-            collate_fn=torch.stack,
+            collate_fn=Collate(device=self.device),
         )
 
     def predict_dataloader(self):
@@ -381,5 +389,5 @@ class WildfireDataModule:
             batch_size=self.eval_batch_size,
             shuffle=False,
             num_workers=self.data_loading_num_workers,
-            collate_fn=torch.stack,
+            collate_fn=Collate(device=self.device),
         )

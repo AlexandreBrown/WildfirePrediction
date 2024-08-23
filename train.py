@@ -40,19 +40,22 @@ def main(cfg: DictConfig):
     test_folder_path = Path(split_info["test_folder_path"])
     train_stats = split_info["train_stats"]
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Device: {device}")
+
     logger.info("Creating data module...")
     data_module = WildfireDataModule(
         input_data_indexes_to_remove=cfg["data"]["input_data_indexes_to_remove"],
         seed=cfg["seed"],
         train_batch_size=cfg["training"]["train_batch_size"],
         eval_batch_size=cfg["training"]["eval_batch_size"],
-        source_no_data_value=cfg["data"]["source_no_data_value"],
         destination_no_data_value=cfg["data"]["destination_no_data_value"],
         train_folder_path=train_folder_path,
         val_folder_path=val_folder_path,
         test_folder_path=test_folder_path,
         train_stats=train_stats,
         data_loading_num_workers=cfg["data"]["data_loading_num_workers"],
+        device=device,
     )
 
     data_module.setup(stage="fit")
@@ -77,10 +80,7 @@ def main(cfg: DictConfig):
 
     loss = create_loss(cfg["training"]["loss"])
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     max_nb_epochs = cfg["training"]["max_nb_epochs"]
-    logger.info(f"Device: {device}")
     logger.info(f"Max number of epochs: {max_nb_epochs}")
 
     best_model_output_folder = base_folder / "models/"
