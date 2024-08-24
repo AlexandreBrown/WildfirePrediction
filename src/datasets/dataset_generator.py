@@ -38,10 +38,9 @@ class DatasetGenerator:
             total=get_ram_total(),
         )
 
-        dataset_folder_path = self.create_dataset_folder_path()
-
         try:
-            tmp_folder_path = self.create_dataset_tmp_folder_path(dataset_folder_path)
+            dataset_folder_path = self.get_dataset_folder_path()
+            tmp_folder_path = self.get_dataset_tmp_folder_path(dataset_folder_path)
 
             logger.info("Loading boundaries...")
             self.canada_boundary.load(provinces=self.config["boundaries"]["provinces"])
@@ -82,6 +81,25 @@ class DatasetGenerator:
         except BaseException as e:
             logger.error(f"Error: {e}")
             raise e
+
+    def get_dataset_folder_path(self) -> Path:
+        if self.config["resume"]:
+            logger.info("Resuming dataset generation...")
+            dataset_folder_path = Path(self.config["resume_folder_path"])
+        else:
+            dataset_folder_path = self.create_dataset_folder_path()
+
+        logger.info(f"Dataset folder path: {dataset_folder_path}")
+
+        return dataset_folder_path
+
+    def get_dataset_tmp_folder_path(self, dataset_folder_path: Path) -> Path:
+        if self.config["resume"]:
+            tmp_folder_path = dataset_folder_path / Path("tmp")
+        else:
+            tmp_folder_path = self.create_dataset_tmp_folder_path(dataset_folder_path)
+
+        return tmp_folder_path
 
     def cleanup_folder(self, folder_path: Path):
         if self.debug:
@@ -159,7 +177,6 @@ class DatasetGenerator:
 
         dataset_folder_path = self.output_folder_path / Path(dataset_uuid)
         dataset_folder_path.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Dataset folder path : {str(dataset_folder_path)}")
 
         return dataset_folder_path
 
@@ -203,54 +220,113 @@ class DatasetGenerator:
         big_tiles_boundaries: gpd.GeoDataFrame,
         target_years_ranges: list,
     ):
-        semaphore = asyncio.Semaphore(self.max_io_concurrency)
-
-        dynamic_data = self.config["input_data"].get("dynamic", {})
-        dynamic_input_data_args = [
-            (
-                self.process_dynamic_input_data,
-                tmp_folder_path,
-                data_name,
-                data_info,
-                big_tiles_boundaries,
-                semaphore,
-            )
-            for data_name, data_info in dynamic_data.items()
-        ]
-
-        static_data = self.config["input_data"].get("static", {})
-        static_input_data_args = [
-            (
-                self.process_static_input_data,
-                tmp_folder_path,
-                data_name,
-                data_info,
-                big_tiles_boundaries,
-                semaphore,
-            )
-            for data_name, data_info in static_data.items()
-        ]
-
-        args = dynamic_input_data_args + static_input_data_args
-
         data_index = {}
 
-        tasks = set()
+        semaphore = asyncio.Semaphore(self.max_io_concurrency)
 
-        for arg in args:
-            task = asyncio.create_task(self._process_input_data(*arg))
-            tasks.add(task)
-            task.add_done_callback(tasks.discard)
+        if not self.config["resume"]:
 
-        input_data_indexes = await asyncio.gather(*tasks)
+            dynamic_data = self.config["input_data"].get("dynamic", {})
+            dynamic_input_data_args = [
+                (
+                    self.process_dynamic_input_data,
+                    tmp_folder_path,
+                    data_name,
+                    data_info,
+                    big_tiles_boundaries,
+                    semaphore,
+                )
+                for data_name, data_info in dynamic_data.items()
+            ]
 
-        for input_data_index in input_data_indexes:
-            for data_name, years_index_or_files_paths in input_data_index.items():
-                data_index[data_name] = years_index_or_files_paths
+            static_data = self.config["input_data"].get("static", {})
+            static_input_data_args = [
+                (
+                    self.process_static_input_data,
+                    tmp_folder_path,
+                    data_name,
+                    data_info,
+                    big_tiles_boundaries,
+                    semaphore,
+                )
+                for data_name, data_info in static_data.items()
+            ]
+
+            args = dynamic_input_data_args + static_input_data_args
+
+            tasks = set()
+
+            for arg in args:
+                task = asyncio.create_task(self._process_input_data(*arg))
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
+
+            input_data_indexes = await asyncio.gather(*tasks)
+
+            for input_data_index in input_data_indexes:
+                for data_name, years_index_or_files_paths in input_data_index.items():
+                    data_index[data_name] = years_index_or_files_paths
+        else:
+            logger.info("Resuming input data processing...")
+            data_index = self.get_resumed_input_data_index(tmp_folder_path)
+            logger.info("Loaded data index from already processed data!")
 
         await self.stack_input_data(
             dataset_folder_path, target_years_ranges, data_index, semaphore
         )
+
+    def get_resumed_input_data_index(self, tmp_folder_path: Path) -> dict:
+        resumed_input_data_index = {}
+
+        dynamic_data = self.config["input_data"].get("dynamic", {})
+        for data_name, data_info in dynamic_data.items():
+            resumed_input_data_index[data_name] = (
+                self.get_resumed_input_data_index_for_dynamic_input_data(
+                    tmp_folder_path, data_name, data_info
+                )
+            )
+
+        static_data = self.config["input_data"].get("static", {})
+        for data_name, data_info in static_data.items():
+            resumed_input_data_index[data_name] = (
+                self.get_resumed_input_data_index_for_static_input_data(
+                    tmp_folder_path, data_name
+                )
+            )
+
+        return resumed_input_data_index
+
+    def get_resumed_input_data_index_for_dynamic_input_data(
+        self, tmp_folder_path: Path, data_name: str, data_info: dict
+    ) -> dict:
+        data_years_index = {}
+        is_affected_by_fires = data_info.get("is_affected_by_fires", False)
+        for year in self.get_dynamic_input_data_total_years_extent(
+            is_affected_by_fires
+        ):
+            year_tiles_paths = list(
+                (
+                    tmp_folder_path / Path(str(year)) / Path(data_name) / Path("tiles")
+                ).glob(f"*{get_extension('gtiff')}")
+            )
+            logger.info(
+                f"Found {len(year_tiles_paths)} tiles for dynamic input data {data_name} and year {year}!"
+            )
+            data_years_index[year] = year_tiles_paths
+        return data_years_index
+
+    def get_resumed_input_data_index_for_static_input_data(
+        self, tmp_folder_path: Path, data_name: str
+    ) -> dict:
+        tiles_paths = list(
+            (
+                tmp_folder_path / Path("static_data") / Path(data_name) / Path("tiles")
+            ).glob(f"*{get_extension('gtiff')}")
+        )
+        logger.info(
+            f"Found {len(tiles_paths)} tiles for static input data {data_name}!"
+        )
+        return tiles_paths
 
     async def _process_input_data(self, *args):
         processing_fn = args[0]
@@ -861,18 +937,19 @@ class DatasetGenerator:
         ]
         tasks = set()
         for arg in args:
-            task = asyncio.create_task(self.stack_input_data_for_years_range(arg))
+            task = asyncio.create_task(self.stack_input_data_for_years_range(*arg))
             tasks.add(task)
             task.add_done_callback(tasks.discard)
 
         await asyncio.gather(*tasks)
 
-        for data_name, years_index_or_files_paths in input_data_index.items():
-            if isinstance(years_index_or_files_paths, dict):
-                for year, tiles_paths in years_index_or_files_paths.items():
-                    self.cleanup_files(tiles_paths)
-            else:
-                self.cleanup_files(years_index_or_files_paths)
+        if self.config["cleanup_tmp_folder_on_success"]:
+            for data_name, years_index_or_files_paths in input_data_index.items():
+                if isinstance(years_index_or_files_paths, dict):
+                    for year, tiles_paths in years_index_or_files_paths.items():
+                        self.cleanup_files(tiles_paths)
+                else:
+                    self.cleanup_files(years_index_or_files_paths)
 
     async def stack_input_data_for_years_range(
         self,

@@ -153,6 +153,17 @@ So each big tile represents the data inputs stacked for 1 year for the area deli
     ```bash
     python generate_dataset.py
     ```
+#### Resume from tmp folder
+We can resume dataset generation by setting `resume: true` in the config and setting the `resume_folder_path` to a string representing the path to the dataset folder to resume (eg: `"data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee"`).  
+The resume expects all data under the `tmp` folder of the `resume_folder_path` to have valid data that is done being processed.  
+For the dynamic input data, this means all data should be under `resume_folder_path/tmp/year_1/input_data_1/tiles/` (for all years and all input data).  
+For the static input data it should be under `resume_folder_path/tmp/static_data/input_data_1/tiles/`.  
+The dataset generation will rebuild its index based on this assumption.  
+This means one can run multiple exeuction of the dataset generation script (eg: generate for year 1 then re-run the script for year 2) then combine the `tmp` folder content from both years to resume the dataset generation as if both years were computed in the same execution.  
+The resume logic resumes right before the **stacking** step in the dataset generation (which is then followed by the target generation).    
+Note: Make sure to set the option `cleanup_tmp_folder_on_success: false` to keep the `tmp` folder in order to resume from it.  
+Note 2 : If you do not wish to keep the temp data to resume the dataset generation, then you can set `cleanup_tmp_folder_on_success: true`, this will delete the temporary data if the dataset generation succeeds.  
+
 
 ### Split Dataset
 1. Add the repo source code to the python path (make sure you are at the root of the repository) :  

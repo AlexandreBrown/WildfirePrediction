@@ -1,4 +1,6 @@
 debug: false
+resume: false
+resume_folder_path: "data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee"
 run:
   name: "generate_dataset_${now:%Y-%m-%d_%H-%M-%S}"
 periods:
@@ -25,7 +27,7 @@ paths:
 max_io_concurrency: 8
 max_cpu_concurrency: 8
 no_data_value: -32768
-cleanup_tmp_folder_on_success: true
+cleanup_tmp_folder_on_success: false
 input_data:
     dynamic:
       MOD13Q1_061__250m_16_days_NDVI:
