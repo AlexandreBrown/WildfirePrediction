@@ -1,19 +1,45 @@
 debug: false
 seed: 42
 run:
-  name: "holdout_split_${now:%Y-%m-%d_%H-%M-%S}"
+  name: "holdout_split_2010_2023_${now:%Y-%m-%d_%H-%M-%S}"
 model:
   input_resolution_in_pixels: 256
 data:
   input_data_periods_folders_paths:
-    - 'data/datasets/eca32e80-f562-4e18-a015-57b2b27e3f68/input_data/2023_2023'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2023_2023'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2022_2022'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2021_2021'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2020_2020'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2019_2019'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2018_2018'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2017_2017'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2016_2016'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2015_2015'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2014_2014'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2013_2013'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2012_2012'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2011_2011'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/input_data/2010_2010'
   target_periods_folders_paths:
-    - 'data/datasets/eca32e80-f562-4e18-a015-57b2b27e3f68/target/2023_2023'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2023_2023'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2022_2022'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2021_2021'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2020_2020'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2019_2019'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2018_2018'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2017_2017'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2016_2016'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2015_2015'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2014_2014'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2013_2013'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2012_2012'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2011_2011'
+    - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2010_2010'
   output_folder_path: 'data/splits/'
-  preprocessing_num_workers: 4
+  preprocessing_num_workers: 8
 training:
   val_split: 0.2
   train_periods:
-    start_inclusive: 2023
-    end_inclusive: 2023
+    start_inclusive: 2010
+    end_inclusive: 2019
     period_length_in_years: 1

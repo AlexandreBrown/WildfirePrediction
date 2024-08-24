@@ -1,6 +1,7 @@
 import hydra
 import json
 import torch
+import numpy as np
 from datasets.wildfire_data_module import WildfireDataModule
 from pathlib import Path
 from loguru import logger
@@ -33,6 +34,10 @@ def main(cfg: DictConfig):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Device: {device}")
+
+    logger.info(f"Seed: {cfg.seed}")
+    torch.manual_seed(cfg.seed)
+    np.random.seed(cfg.seed)
 
     data_module = WildfireDataModule(
         input_data_indexes_to_remove=[],
