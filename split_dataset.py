@@ -78,7 +78,7 @@ def get_train_periods(cfg: DictConfig) -> list:
         ), f"Target year end {target_year_end} is greater than target year end inclusive {target_year_end_inclusive}"
         target_years_ranges.append(range(target_year_start, target_year_end + 1))
 
-    logger.info(f"Target years ranges: {target_years_ranges}")
+    logger.info(f"Train target years ranges: {target_years_ranges}")
 
     return target_years_ranges
 
