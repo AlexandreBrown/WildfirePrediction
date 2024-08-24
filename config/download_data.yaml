@@ -22,6 +22,7 @@ sources:
             - 2m_temperature
             - potential_evaporation
             - surface_net_solar_radiation
+            - surface_runoff
             - total_precipitation 
     nasa_earth_data:
         products_layers:
