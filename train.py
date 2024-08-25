@@ -44,6 +44,7 @@ def main(cfg: DictConfig):
     logger.info(f"Device: {device}")
 
     logger.info("Creating data module...")
+    data_augs = cfg["training"]["data_augs"]
     data_module = WildfireDataModule(
         input_data_indexes_to_remove=cfg["data"]["input_data_indexes_to_remove"],
         seed=cfg["seed"],
@@ -56,6 +57,7 @@ def main(cfg: DictConfig):
         train_stats=train_stats,
         data_loading_num_workers=cfg["data"]["data_loading_num_workers"],
         device=device,
+        data_augs=data_augs,
     )
 
     data_module.setup(stage="fit")
@@ -78,7 +80,9 @@ def main(cfg: DictConfig):
         lr=cfg["model"]["optimizer"]["lr"],
     )
 
-    loss = create_loss(cfg["training"]["loss"])
+    loss = create_loss(
+        cfg["training"]["loss"]["name"], **cfg["training"]["loss"]["params"]
+    )
 
     max_nb_epochs = cfg["training"]["max_nb_epochs"]
     logger.info(f"Max number of epochs: {max_nb_epochs}")
@@ -93,6 +97,7 @@ def main(cfg: DictConfig):
         optimizer=optimizer,
         device=device,
         loss=loss,
+        loss_name=cfg["training"]["loss"]["name"],
         optimization_metric_name=cfg["training"]["optimization_metric_name"],
         minimize_optimization_metric=cfg["training"]["minimize_optimization_metric"],
         best_model_output_folder=best_model_output_folder,

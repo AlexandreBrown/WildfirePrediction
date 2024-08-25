@@ -13,17 +13,29 @@ model:
     lr: 0.001
 output_path: "data/trainings/"
 data:
-  split_info_file_path: 'data/splits/holdout_split_2024-08-19_12-32-49/data_split_info.json'
+  split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-08-24_14-45-41/data_split_info.json'
   destination_no_data_value: -32768.0
-  data_loading_num_workers: 1
+  data_loading_num_workers: 4
   input_data_indexes_to_remove: []
 training:
   max_nb_epochs: 1
-  train_batch_size: 32
-  eval_batch_size: 64
-  optimization_metric_name: "dice_coef"
-  minimize_optimization_metric: false
-  loss: "bce_logits"
+  train_batch_size: 4
+  eval_batch_size: 8
+  optimization_metric_name: "dice_loss"
+  minimize_optimization_metric: true
+  data_augs:
+    - name: "RandomHorizontalFlip"
+      params:
+        p: 0.5
+    - name: "RandomVerticalFlip"
+      params:
+        p: 0.5
+  loss:
+    name: "dice_loss"
+    params:
+      smooth: 1.0
+      p: 2
+      reduction: "mean"
 logging:
   loggers:
     - loguru

@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader
 from datasets.wildfire_data_module import WildfireDataModule
 from pathlib import Path
 from loggers.factory import LoggerFactory
-from metrics.dice_coef_metric import DiceCoefMetric
 from metrics.pr_auc import PrecisionRecallAuc
 
 
@@ -20,6 +19,7 @@ class SemanticSegmentationTrainer:
         optimizer,
         device: torch.device,
         loss: nn.Module,
+        loss_name: str,
         optimization_metric_name: str,
         minimize_optimization_metric: bool,
         best_model_output_folder: Path,
@@ -31,6 +31,7 @@ class SemanticSegmentationTrainer:
         self.optimizer = optimizer
         self.device = device
         self.loss = loss
+        self.loss_name = loss_name
         self.optimization_metric_name = optimization_metric_name
         self.minimize_optimization_metric = minimize_optimization_metric
         self.best_model_output_folder = best_model_output_folder
@@ -44,7 +45,7 @@ class SemanticSegmentationTrainer:
         logger.info("Trainer initialized!")
 
     def create_metrics(self) -> list:
-        return [DiceCoefMetric(nb_classes=1), PrecisionRecallAuc()]
+        return [PrecisionRecallAuc()]
 
     def train_model(self, max_nb_epochs: int, train_dl: DataLoader, val_dl: DataLoader):
         logger.info("Training model...")
@@ -146,7 +147,7 @@ class SemanticSegmentationTrainer:
             loss.backward()
             self.optimizer.step()
 
-            self.train_logger.log_step_metric("loss", loss.item())
+            self.train_logger.log_step_metric(self.loss_name, loss.item())
 
             for train_metric in self.train_metrics:
                 metric_value = train_metric(y_hat, y)
@@ -163,7 +164,7 @@ class SemanticSegmentationTrainer:
             epoch_loss += loss.item()
 
         epoch_loss /= len(self.train_dl)
-        self.train_logger.log_epoch_metric("loss", epoch_loss)
+        self.train_logger.log_epoch_metric(self.loss_name, epoch_loss)
 
         for train_metric in self.train_metrics:
             metric_result = train_metric.compute()
@@ -194,7 +195,7 @@ class SemanticSegmentationTrainer:
                     val_metric(y_hat, y)
 
             val_loss /= len(self.val_dl)
-            self.val_logger.log_epoch_metric("loss", val_loss)
+            self.val_logger.log_epoch_metric(self.loss_name, val_loss)
 
             for val_metric in self.val_metrics:
                 metric_result = val_metric.compute()
@@ -259,7 +260,7 @@ class SemanticSegmentationTrainer:
                 test_metric(y_hat, y)
 
         test_loss /= len(self.test_dl)
-        self.test_logger.log_epoch_metric("loss", test_loss)
+        self.test_logger.log_epoch_metric(self.loss_name, test_loss)
 
         for test_metric in self.test_metrics:
             metric_result = test_metric.compute()

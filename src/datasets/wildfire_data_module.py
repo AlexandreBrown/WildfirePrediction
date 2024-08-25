@@ -39,6 +39,7 @@ class WildfireDataModule:
         train_stats: Optional[dict] = None,
         data_loading_num_workers: int = 4,
         device: Optional[torch.device] = None,
+        data_augs: Optional[dict] = None,
     ):
         gdal.UseExceptions()
         self.input_data_indexes_to_remove = input_data_indexes_to_remove
@@ -61,6 +62,7 @@ class WildfireDataModule:
         self.predict_folder_path = predict_folder_path
         self.data_loading_num_workers = data_loading_num_workers
         self.device = device
+        self.data_augs = data_augs
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
@@ -357,13 +359,34 @@ class WildfireDataModule:
         return efficient_dataset
 
     def train_dataloader(self):
+
+        data_augs = self.create_data_augs()
+
         return DataLoader(
             self.train_dataset,
             batch_size=self.train_batch_size,
             shuffle=True,
             num_workers=self.data_loading_num_workers,
-            collate_fn=Collate(device=self.device),
+            collate_fn=Collate(transform=data_augs, device=self.device),
         )
+
+    def create_data_augs(self) -> Optional[v2.Compose]:
+        if self.data_augs is None:
+            return None
+
+        data_augs = []
+
+        for data_aug in self.data_augs:
+            if data_aug["name"] == "RandomHorizontalFlip":
+                data_augs.append(v2.RandomHorizontalFlip(**data_aug["params"]))
+            elif data_aug["name"] == "RandomVerticalFlip":
+                data_augs.append(v2.RandomVerticalFlip(**data_aug["params"]))
+            else:
+                raise ValueError(f"Unknown data augmentation: {data_aug['name']}")
+
+        logger.info(f"Created {len(data_augs)} data augmentations!")
+
+        return v2.Compose(data_augs)
 
     def val_dataloader(self):
         return DataLoader(
