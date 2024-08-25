@@ -8,10 +8,16 @@ class AggregateLogger(Logger):
 
     @property
     def step_metrics(self):
+        if len(self.loggers) == 0:
+            return {}
+
         return self.loggers[0].step_metrics
 
     @property
     def epoch_metrics(self):
+        if len(self.loggers) == 0:
+            return {}
+
         return self.loggers[0].epoch_metrics
 
     def log_step_metric(self, metric_name: str, metric_value: float):
@@ -29,3 +35,7 @@ class AggregateLogger(Logger):
     def on_step_end(self, step: int):
         for logger in self.loggers:
             logger.on_step_end(step)
+
+    def log_parameters(self, parameters: dict):
+        for logger in self.loggers:
+            logger.log_parameters(parameters)

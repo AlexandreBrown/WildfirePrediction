@@ -1,3 +1,4 @@
+from comet_ml.exceptions import InterruptedExperiment
 import asyncio
 import torch
 import hydra
@@ -8,7 +9,6 @@ from pathlib import Path
 from loguru import logger
 from omegaconf import DictConfig
 from predictors.map_predictor import MapPredictor
-from comet_ml.exceptions import InterruptedExperiment
 from logging_utils.logging import setup_logger
 
 
@@ -16,10 +16,9 @@ from logging_utils.logging import setup_logger
 def main(cfg: DictConfig):
     run_name = cfg["run"]["name"]
     debug = cfg["debug"]
+    setup_logger(logger, run_name, debug)
     logger.info(f"Run name: {run_name}")
     logger.info(f"Debug : {debug}")
-
-    setup_logger(logger, run_name, debug)
 
     run_output_path = Path(cfg["output_path"]) / Path(cfg["run"]["name"])
     run_output_path.mkdir(parents=True, exist_ok=True)
@@ -59,7 +58,10 @@ def main(cfg: DictConfig):
     )
 
     logger.info("Loading trained model...")
-    model.load_state_dict(torch.load(Path(cfg["model"]["trained_model_path"])))
+    model.load_state_dict(
+        torch.load(Path(cfg["model"]["trained_model_path"]), weights_only=True),
+        strict=True,
+    )
 
     convert_model_output_to_probabilities = cfg["predict"][
         "convert_model_output_to_probabilities"

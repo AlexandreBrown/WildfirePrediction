@@ -16,7 +16,7 @@ class WildfireData:
         if len(dataset) == 0:
             return cls(
                 images=torch.empty((0, 0, 0), dtype=torch.float32),
-                masks=torch.empty((0, 0, 0), dtype=torch.long),
+                masks=torch.empty((0, 0, 0), dtype=torch.int8),
                 geotransforms=torch.empty((0, 0), dtype=torch.float32),
                 batch_size=[0],
             )
@@ -30,7 +30,7 @@ class WildfireData:
                 dtype=torch.float32,
             ),
             masks=MemoryMappedTensor.empty(
-                (len(dataset), *dataset[0][1].shape), dtype=torch.long
+                (len(dataset), *dataset[0][1].shape), dtype=torch.int8
             ),
             geotransforms=MemoryMappedTensor.empty(
                 (len(dataset), *dataset[0][2].shape), dtype=torch.float32

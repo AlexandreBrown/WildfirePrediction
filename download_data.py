@@ -235,10 +235,9 @@ def download_gov_can_data(cfg: DictConfig):
 def main(cfg: DictConfig):
     run_name = cfg["run"]["name"]
     debug = cfg["debug"]
+    setup_logger(logger, run_name, debug)
     logger.info(f"Run name: {run_name}")
     logger.info(f"Debug : {debug}")
-
-    setup_logger(logger, run_name, debug)
 
     if "era5" in cfg.sources:
         logger.info("Downloading ERA5 data...")

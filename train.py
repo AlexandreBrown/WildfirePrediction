@@ -1,3 +1,4 @@
+from comet_ml.exceptions import InterruptedExperiment
 import torch
 import numpy as np
 import hydra
@@ -11,7 +12,6 @@ from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from trainers.semantic_segmentation_trainer import SemanticSegmentationTrainer
 from loggers.factory import LoggerFactory
-from comet_ml.exceptions import InterruptedExperiment
 from logging_utils.logging import setup_logger
 
 
@@ -19,10 +19,9 @@ from logging_utils.logging import setup_logger
 def main(cfg: DictConfig):
     run_name = cfg["run"]["name"]
     debug = cfg["debug"]
+    setup_logger(logger, run_name, debug)
     logger.info(f"Run name: {run_name}")
     logger.info(f"Debug : {debug}")
-
-    setup_logger(logger, run_name, debug)
 
     logger.info(f"Seed: {cfg.seed}")
     torch.manual_seed(cfg.seed)
@@ -90,6 +89,9 @@ def main(cfg: DictConfig):
     best_model_output_folder = base_folder / "models/"
 
     logger_factory = LoggerFactory(OmegaConf.to_container(cfg))
+
+    config_logger = logger_factory.create("")
+    config_logger.log_parameters(OmegaConf.to_container(cfg))
 
     trainer = SemanticSegmentationTrainer(
         model=model,

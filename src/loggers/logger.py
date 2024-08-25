@@ -31,5 +31,9 @@ class Logger(ABC):
     def on_step_end(self, step: int):
         pass
 
+    @abstractmethod
+    def log_parameters(self, parameters: dict):
+        pass
+
     def format_metrics(self, metrics: dict) -> dict:
         return {k: f"{v:.4}" for k, v in metrics.items()}

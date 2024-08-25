@@ -26,3 +26,6 @@ class CometmlLogger(Logger):
             step=step,
         )
         self._step_metrics.clear()
+
+    def log_parameters(self, parameters: dict):
+        self.experiment.log_parameters(parameters)

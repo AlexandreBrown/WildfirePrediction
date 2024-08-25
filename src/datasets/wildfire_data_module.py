@@ -14,7 +14,7 @@ from stats.image import ImageStats
 from torchvision.transforms import v2
 from transforms.replace_value_transform import ReplaceNanValueTransform
 from datasets.wildfire_data import WildfireData
-from datasets.collate import Collate
+from datasets.collate import CollateDataAugs
 
 
 class WildfireDataModule:
@@ -366,12 +366,12 @@ class WildfireDataModule:
             self.train_dataset,
             batch_size=self.train_batch_size,
             shuffle=True,
-            num_workers=self.data_loading_num_workers,
-            collate_fn=Collate(transform=data_augs, device=self.device),
+            num_workers=0,
+            collate_fn=CollateDataAugs(data_augs=data_augs),
         )
 
     def create_data_augs(self) -> Optional[v2.Compose]:
-        if self.data_augs is None:
+        if self.data_augs is None or len(self.data_augs) == 0:
             return None
 
         data_augs = []
@@ -393,8 +393,8 @@ class WildfireDataModule:
             self.val_dataset,
             batch_size=self.eval_batch_size,
             shuffle=False,
-            num_workers=self.data_loading_num_workers,
-            collate_fn=Collate(device=self.device),
+            num_workers=0,
+            collate_fn=CollateDataAugs(),
         )
 
     def test_dataloader(self):
@@ -402,8 +402,8 @@ class WildfireDataModule:
             self.test_dataset,
             batch_size=self.eval_batch_size,
             shuffle=False,
-            num_workers=self.data_loading_num_workers,
-            collate_fn=Collate(device=self.device),
+            num_workers=0,
+            collate_fn=CollateDataAugs(),
         )
 
     def predict_dataloader(self):
@@ -411,6 +411,6 @@ class WildfireDataModule:
             self.predict_dataset,
             batch_size=self.eval_batch_size,
             shuffle=False,
-            num_workers=self.data_loading_num_workers,
-            collate_fn=Collate(device=self.device),
+            num_workers=0,
+            collate_fn=CollateDataAugs(),
         )

@@ -55,7 +55,7 @@ class WildfireDataset(Dataset):
             target_dataset = gdal.Open(str(self.target_file_paths[idx]))
             target_data_numpy = target_dataset.ReadAsArray()
             target_mask = tv_tensors.Mask(
-                torch.from_numpy(target_data_numpy), dtype=torch.long
+                torch.from_numpy(target_data_numpy), dtype=torch.int8
             )
 
             if self.transform:

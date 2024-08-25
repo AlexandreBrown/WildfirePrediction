@@ -22,3 +22,6 @@ class LoguruLogger(Logger):
             f"{self.stage_prefix}{self.step_log_prefix}{step}: {displayable_metrics}"
         )
         self._step_metrics.clear()
+
+    def log_parameters(self, parameters: dict):
+        pass

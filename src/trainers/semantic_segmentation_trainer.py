@@ -129,20 +129,14 @@ class SemanticSegmentationTrainer:
         for train_data in train_loader:
             self.train_step += 1
 
-            X = train_data.images
-            y = train_data.masks
+            X = train_data.images.to(self.device)
+            y = train_data.masks.to(self.device)
 
-            logger.debug(f"Predicting train batch X ({X.shape}) y ({y.shape})...")
             y_hat = self.model(X)
-            logger.debug(f"Predicted y_hat ({y_hat.shape})")
             y_hat = torch.squeeze(y_hat, dim=1)
-            logger.debug(f"Predicted y_hat after squeeze ({y_hat.shape})")
 
-            logger.debug("Computing loss...")
-            logger.debug(f"y_hat {y_hat.shape} y {y.shape}")
-            loss = self.loss(y_hat, y.float())
+            loss = self.loss(y_hat, y)
 
-            logger.debug("Optimizing model...")
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -151,9 +145,7 @@ class SemanticSegmentationTrainer:
 
             for train_metric in self.train_metrics:
                 metric_value = train_metric(y_hat, y)
-                self.train_logger.log_step_metric(
-                    train_metric.name, metric_value.item()
-                )
+                self.train_logger.log_step_metric(train_metric.name, metric_value)
 
             formatted_metrics = self.train_logger.format_metrics(
                 self.train_logger.step_metrics
@@ -163,12 +155,17 @@ class SemanticSegmentationTrainer:
 
             epoch_loss += loss.item()
 
+            del X
+            del y
+            del y_hat
+            del loss
+
         epoch_loss /= len(self.train_dl)
         self.train_logger.log_epoch_metric(self.loss_name, epoch_loss)
 
         for train_metric in self.train_metrics:
             metric_result = train_metric.compute()
-            self.train_logger.log_epoch_metric(train_metric.name, metric_result.item())
+            self.train_logger.log_epoch_metric(train_metric.name, metric_result)
 
     def validate_model(self):
         logger.debug("Validating model...")
@@ -181,25 +178,30 @@ class SemanticSegmentationTrainer:
         with torch.no_grad():
             for val_data in val_loader:
 
-                X = val_data.images
-                y = val_data.masks
+                X = val_data.images.to(self.device)
+                y = val_data.masks.to(self.device)
 
                 y_hat = self.model(X)
                 y_hat = torch.squeeze(y_hat, dim=1)
 
-                loss = self.loss(y_hat, y.float())
+                loss = self.loss(y_hat, y)
 
                 val_loss += loss.item()
 
                 for val_metric in self.val_metrics:
                     val_metric(y_hat, y)
 
+                del X
+                del y
+                del y_hat
+                del loss
+
             val_loss /= len(self.val_dl)
             self.val_logger.log_epoch_metric(self.loss_name, val_loss)
 
             for val_metric in self.val_metrics:
                 metric_result = val_metric.compute()
-                self.val_logger.log_epoch_metric(val_metric.name, metric_result.item())
+                self.val_logger.log_epoch_metric(val_metric.name, metric_result)
 
     def update_best_model(self):
         logger.debug("Updating best model...")
@@ -232,39 +234,46 @@ class SemanticSegmentationTrainer:
             self.train_dl != test_dl and self.val_dl != test_dl
         ), "Test set should be different from train and val sets!"
 
-        best_trained_model = self.model.load_state_dict(
-            torch.load(self.best_model_path)
-        ).to(self.device)
+        self.model.load_state_dict(
+            torch.load(self.best_model_path, weights_only=True), strict=True
+        )
+        self.model.to(self.device)
 
         test_loss = 0.0
         self.test_dl = test_dl
         self.test_logger = self.logger_factory.create("test_")
 
-        best_trained_model.eval()
+        self.model.eval()
 
         test_loader = tqdm(self.test_dl, desc="Testing", leave=False)
 
-        for test_data in test_loader:
+        with torch.no_grad():
+            for test_data in test_loader:
 
-            X = test_data.images
-            y = test_data.masks
+                X = test_data.images.to(self.device)
+                y = test_data.masks.to(self.device)
 
-            y_hat = best_trained_model(X)
-            y_hat = torch.squeeze(y_hat, dim=1)
+                y_hat = self.model(X)
+                y_hat = torch.squeeze(y_hat, dim=1)
 
-            loss = self.loss(y_hat, y.float())
+                loss = self.loss(y_hat, y)
 
-            test_loss += loss.item()
+                test_loss += loss.item()
 
-            for test_metric in self.test_metrics:
-                test_metric(y_hat, y)
+                for test_metric in self.test_metrics:
+                    test_metric(y_hat, y)
+
+                del X
+                del y
+                del y_hat
+                del loss
 
         test_loss /= len(self.test_dl)
         self.test_logger.log_epoch_metric(self.loss_name, test_loss)
 
         for test_metric in self.test_metrics:
             metric_result = test_metric.compute()
-            self.test_logger.log_epoch_metric(test_metric.name, metric_result.item())
+            self.test_logger.log_epoch_metric(test_metric.name, metric_result)
 
         self.test_logger.on_epoch_end(epoch=1)
 

@@ -3,7 +3,7 @@ seed: 42
 run:
   name: "train_unet_${now:%Y-%m-%d_%H-%M-%S}"
 model:
-  number_of_input_channels: 2
+  number_of_input_channels: 16
   number_of_classes: 1
   activation_fn_name: "relu"
   num_encoder_decoder_blocks: 4
@@ -15,21 +15,15 @@ output_path: "data/trainings/"
 data:
   split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-08-24_14-45-41/data_split_info.json'
   destination_no_data_value: -32768.0
-  data_loading_num_workers: 4
+  data_loading_num_workers: 6
   input_data_indexes_to_remove: []
 training:
   max_nb_epochs: 1
-  train_batch_size: 4
-  eval_batch_size: 8
+  train_batch_size: 16
+  eval_batch_size: 32
   optimization_metric_name: "dice_loss"
   minimize_optimization_metric: true
-  data_augs:
-    - name: "RandomHorizontalFlip"
-      params:
-        p: 0.5
-    - name: "RandomVerticalFlip"
-      params:
-        p: 0.5
+  data_augs: []
   loss:
     name: "dice_loss"
     params:
@@ -38,5 +32,5 @@ training:
       reduction: "mean"
 logging:
   loggers:
-    - loguru
-    # - comet_ml
+    #- loguru
+    - cometml

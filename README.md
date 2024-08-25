@@ -194,12 +194,35 @@ Note : The script will generate a json file called `data_split_info.json` under 
 1. Update the config file `config/train.yaml` to specify where the data_split_info file is :  
     - Set `data.split_info_file_path` to a string representing the path of the json file.
 
+1. Setup the loggers if needed (see [loggers](#loggers))
+
 1. Run the train script :  
     ```shell
     python train.py
     ```
   
 Note : The script outputs training results under the output folder.
+
+#### Loggers
+The training config supports the following loggers:  
+- [loguru](#loguru)
+- [cometml](#comet-ml)  
+##### Loguru  
+https://github.com/Delgan/loguru  
+No setup required, it will print to `std.out`.  
+
+##### Comet ML  
+https://www.comet.com/site/  
+1. Set the following environment variables **prior** to running the training script :    
+    ```bash
+    export COMET_ML_API_KEY=<YOUR_API_KEY>
+    ```
+    ```bash
+    export COMET_ML_PROJECT_NAME=<YOUR_PROJECT>
+    ```
+    ```bash
+    export COMET_ML_WORKSPACE=<YOUR_WORKSPACE>
+    ```
 
 ### Predict
 1. Add the repo source code to the python path (make sure you are at the root of the repository) :  
@@ -217,7 +240,7 @@ Note : The script outputs training results under the output folder.
     python predict.py
     ```
   
-Note : The script outputs 1 raster file which corresponds to the prediction map where each pixel has a probability of future wildfire occurrence assigned to it.
+Note : The script outputs 1 raster file which corresponds to the prediction map where each pixel has a probability of future wildfire occurrence assigned to it.  
 
 # Deep Learning Model
 - The repository features a custom implementation of a [U-Net Convolutional Neural Network](https://arxiv.org/abs/1505.04597).
