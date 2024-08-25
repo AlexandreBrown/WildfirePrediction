@@ -65,10 +65,12 @@ class SemanticSegmentationTrainer:
             self.epoch += 1
             self.train_model_for_1_epoch()
             self.validate_model()
-            self.update_epoch_metrics_progress(epochs)
-            self.update_best_model()
-            self.train_logger.on_epoch_end(self.epoch)
-            self.val_logger.on_epoch_end(self.epoch)
+            train_epoch_metrics = self.train_logger.on_epoch_end(self.epoch)
+            val_epoch_metrics = self.val_logger.on_epoch_end(self.epoch)
+            self.update_epoch_metrics_progress(
+                epochs, train_epoch_metrics, val_epoch_metrics
+            )
+            self.update_best_model(val_epoch_metrics)
 
         end_time = time.time()
 
@@ -87,17 +89,15 @@ class SemanticSegmentationTrainer:
 
         logger.success("Training completed successfully!")
 
-    def update_epoch_metrics_progress(self, epochs):
-        formatted_train_metrics = self.train_logger.format_metrics(
-            self.train_logger.epoch_metrics
-        )
+    def update_epoch_metrics_progress(
+        self, epochs, train_epoch_metrics, val_epoch_metrics
+    ):
+        formatted_train_metrics = self.train_logger.format_metrics(train_epoch_metrics)
         formatted_train_metrics = {
             f"train_{k}": v for k, v in formatted_train_metrics.items()
         }
 
-        formatted_val_metrics = self.val_logger.format_metrics(
-            self.val_logger.epoch_metrics
-        )
+        formatted_val_metrics = self.val_logger.format_metrics(val_epoch_metrics)
         formatted_val_metrics = {
             f"val_{k}": v for k, v in formatted_val_metrics.items()
         }
@@ -147,11 +147,9 @@ class SemanticSegmentationTrainer:
                 metric_value = train_metric(y_hat, y)
                 self.train_logger.log_step_metric(train_metric.name, metric_value)
 
-            formatted_metrics = self.train_logger.format_metrics(
-                self.train_logger.step_metrics
-            )
+            train_step_metrics = self.train_logger.on_step_end(self.train_step)
+            formatted_metrics = self.train_logger.format_metrics(train_step_metrics)
             train_loader.set_postfix(formatted_metrics)
-            self.train_logger.on_step_end(self.train_step)
 
             epoch_loss += loss.item()
 
@@ -203,11 +201,9 @@ class SemanticSegmentationTrainer:
                 metric_result = val_metric.compute()
                 self.val_logger.log_epoch_metric(val_metric.name, metric_result)
 
-    def update_best_model(self):
+    def update_best_model(self, val_epoch_metrics: dict):
         logger.debug("Updating best model...")
-        val_metric_to_optimize = self.val_logger.epoch_metrics[
-            self.optimization_metric_name
-        ]
+        val_metric_to_optimize = val_epoch_metrics[self.optimization_metric_name]
 
         if self.minimize_optimization_metric:
             is_model_better = val_metric_to_optimize < self.best_val_metric

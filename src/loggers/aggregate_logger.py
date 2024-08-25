@@ -28,13 +28,21 @@ class AggregateLogger(Logger):
         for logger in self.loggers:
             logger.log_epoch_metric(metric_name, metric_value)
 
-    def on_epoch_end(self, epoch: int):
-        for logger in self.loggers:
-            logger.on_epoch_end(epoch)
+    def on_epoch_end(self, epoch: int) -> dict:
+        epoch_metrics = {}
 
-    def on_step_end(self, step: int):
         for logger in self.loggers:
-            logger.on_step_end(step)
+            epoch_metrics = logger.on_epoch_end(epoch)
+
+        return epoch_metrics
+
+    def on_step_end(self, step: int) -> dict:
+        step_metrics = {}
+
+        for logger in self.loggers:
+            step_metrics = logger.on_step_end(step)
+
+        return step_metrics
 
     def log_parameters(self, parameters: dict):
         for logger in self.loggers:

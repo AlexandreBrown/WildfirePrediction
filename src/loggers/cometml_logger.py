@@ -10,22 +10,24 @@ class CometmlLogger(Logger):
         super().__init__()
         self.experiment = experiment
 
-    def on_epoch_end(self, epoch: int):
+    def on_epoch_end(self, epoch: int) -> dict:
+        epoch_metrics = super().on_epoch_end(epoch)
         self.experiment.log_metrics(
-            self._epoch_metrics,
-            prefix=f"{self.stage_prefix}{self.epoch_log_prefix}",
+            epoch_metrics,
+            prefix=f"{self.stage_prefix}{self.epoch_log_prefix[:-1]}",
             epoch=epoch,
         )
-        self._epoch_metrics.clear()
         self.experiment.log_epoch_end(epoch)
+        return epoch_metrics
 
-    def on_step_end(self, step: int):
+    def on_step_end(self, step: int) -> dict:
+        step_metrics = super().on_step_end(step)
         self.experiment.log_metrics(
-            self._step_metrics,
-            prefix=f"{self.stage_prefix}{self.step_log_prefix}",
+            step_metrics,
+            prefix=f"{self.stage_prefix}{self.step_log_prefix[:-1]}",
             step=step,
         )
-        self._step_metrics.clear()
+        return step_metrics
 
     def log_parameters(self, parameters: dict):
         self.experiment.log_parameters(parameters)
