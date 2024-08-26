@@ -7,10 +7,10 @@ model:
   number_of_classes: 1
   activation_fn_name: "relu"
   num_encoder_decoder_blocks: 4
-  use_batchnorm: false
+  use_batchnorm: true
   optimizer:
     name: "adam"
-    lr: 0.001
+    lr: 0.0001
 output_path: "data/trainings/"
 data:
   split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-08-24_14-45-41/data_split_info.json'
@@ -18,19 +18,29 @@ data:
   data_loading_num_workers: 6
   input_data_indexes_to_remove: []
 training:
-  max_nb_epochs: 60
+  max_nb_epochs: 100
   train_batch_size: 16
   eval_batch_size: 32
   optimization_metric_name: "dice_loss"
   minimize_optimization_metric: true
-  data_augs: []
+  data_augs:
+    - name: "RandomVerticalFlip"
+      params:
+        p: 0.5
+    - name: "RandomHorizontalFlip"
+      params:
+        p: 0.5
+    - name: "RandomRotate"
+      params:
+        p: 0.5
+        degrees: 35
   loss:
     name: "dice_loss"
     params:
-      smooth: 1.0
-      p: 2
-      reduction: "mean"
+      mode: "binary"
+      log_loss: false
+      from_logits: true
 logging:
   loggers:
-    #- loguru
+    # - loguru
     - cometml

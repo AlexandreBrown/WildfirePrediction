@@ -7,7 +7,6 @@ import torch
 class ReplaceNanValueTransform(nn.Module):
     def __init__(self, replace_value: float):
         super().__init__()
-        self.value_to_replace = float("nan")  # value_to_replace
         self.replace_value = replace_value
 
     def forward(self, img: tv_tensors.Image, mask: Optional[tv_tensors.Mask] = None):

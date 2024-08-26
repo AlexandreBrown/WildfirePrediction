@@ -1,3 +1,4 @@
+from omegaconf import OmegaConf
 import torch
 import subprocess
 import multiprocessing as mp
@@ -381,6 +382,15 @@ class WildfireDataModule:
                 data_augs.append(v2.RandomHorizontalFlip(**data_aug["params"]))
             elif data_aug["name"] == "RandomVerticalFlip":
                 data_augs.append(v2.RandomVerticalFlip(**data_aug["params"]))
+            elif data_aug["name"] == "RandomRotate":
+                params_without_p = OmegaConf.to_container(data_aug["params"])
+                params_without_p.pop("p")
+                data_augs.append(
+                    v2.RandomApply(
+                        transforms=[v2.RandomRotation(**params_without_p)],
+                        p=data_aug["params"]["p"],
+                    )
+                )
             else:
                 raise ValueError(f"Unknown data augmentation: {data_aug['name']}")
 

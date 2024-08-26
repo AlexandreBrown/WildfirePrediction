@@ -27,3 +27,4 @@ dependencies:
     - torchinfo==1.8.0
     - tqdm==4.66.5
     - comet-ml==3.44.4
+    - segmentation-models-pytorch==0.3.4

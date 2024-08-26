@@ -2,12 +2,13 @@ import torch
 import tqdm
 from tensordict import MemoryMappedTensor, tensorclass
 from torch.utils.data import DataLoader
+from torchvision import tv_tensors
 
 
 @tensorclass
 class WildfireData:
-    images: torch.Tensor
-    masks: torch.Tensor
+    images: tv_tensors.Image
+    masks: tv_tensors.Mask
     geotransforms: torch.Tensor
 
     @classmethod
@@ -15,22 +16,26 @@ class WildfireData:
 
         if len(dataset) == 0:
             return cls(
-                images=torch.empty((0, 0, 0), dtype=torch.float32),
-                masks=torch.empty((0, 0, 0), dtype=torch.int8),
+                images=tv_tensors.Image(torch.empty((0, 0, 0), dtype=torch.float32)),
+                masks=tv_tensors.Mask(torch.empty((0, 0, 0), dtype=torch.int8)),
                 geotransforms=torch.empty((0, 0), dtype=torch.float32),
                 batch_size=[0],
             )
 
         data = cls(
-            images=MemoryMappedTensor.empty(
-                (
-                    len(dataset),
-                    *dataset[0][0].shape,
-                ),
-                dtype=torch.float32,
+            images=tv_tensors.Image(
+                MemoryMappedTensor.empty(
+                    (
+                        len(dataset),
+                        *dataset[0][0].shape,
+                    ),
+                    dtype=torch.float32,
+                )
             ),
-            masks=MemoryMappedTensor.empty(
-                (len(dataset), *dataset[0][1].shape), dtype=torch.int8
+            masks=tv_tensors.Mask(
+                MemoryMappedTensor.empty(
+                    (len(dataset), *dataset[0][1].shape), dtype=torch.int8
+                )
             ),
             geotransforms=MemoryMappedTensor.empty(
                 (len(dataset), *dataset[0][2].shape), dtype=torch.float32
