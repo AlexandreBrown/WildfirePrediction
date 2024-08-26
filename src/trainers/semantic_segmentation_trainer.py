@@ -17,6 +17,7 @@ class SemanticSegmentationTrainer:
         model: nn.Module,
         data_module: WildfireDataModule,
         optimizer,
+        lr_scheduler,
         device: torch.device,
         loss: nn.Module,
         loss_name: str,
@@ -29,6 +30,7 @@ class SemanticSegmentationTrainer:
         self.model = model.to(device)
         self.data_module = data_module
         self.optimizer = optimizer
+        self.lr_scheduler = lr_scheduler
         self.device = device
         self.loss = loss
         self.loss_name = loss_name
@@ -71,6 +73,7 @@ class SemanticSegmentationTrainer:
                 epochs, train_epoch_metrics, val_epoch_metrics
             )
             self.update_best_model(val_epoch_metrics)
+            self.lr_scheduler.step()
 
         end_time = time.time()
 

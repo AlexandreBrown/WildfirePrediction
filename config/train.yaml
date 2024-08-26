@@ -10,11 +10,18 @@ model:
   use_batchnorm: true
   optimizer:
     name: "adam"
-    lr: 0.0001
+    params:
+      lr : 0.001
+      weight_decay: 0.0001
+  lr_scheduler:
+    name: "poly_lr"
+    params:
+      total_iters: 100
+      power: 1.0
 output_path: "data/trainings/"
 data:
   split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-08-24_14-45-41/data_split_info.json'
-  destination_no_data_value: -32768.0
+  destination_no_data_value: 0.0
   data_loading_num_workers: 6
   input_data_indexes_to_remove: []
 training:

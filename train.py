@@ -7,6 +7,7 @@ from losses.loss_factory import create_loss
 from models.cnn.unet.model import UnetModel
 from datasets.wildfire_data_module import WildfireDataModule
 from optimizers.optimizer_factory import create_optimizer
+from lr_schedulers.lr_scheduler_factory import create_lr_scheduler
 from pathlib import Path
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
@@ -73,10 +74,10 @@ def main(cfg: DictConfig):
         use_batchnorm=cfg["model"]["use_batchnorm"],
     )
 
-    optimizer = create_optimizer(
-        model,
-        optimizer_name=cfg["model"]["optimizer"]["name"],
-        lr=cfg["model"]["optimizer"]["lr"],
+    optimizer = create_optimizer(model, optimizer_config=cfg["model"]["optimizer"])
+
+    lr_scheduler = create_lr_scheduler(
+        optimizer, scheduler_config=cfg["model"]["lr_scheduler"]
     )
 
     loss = create_loss(
@@ -97,6 +98,7 @@ def main(cfg: DictConfig):
         model=model,
         data_module=data_module,
         optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
         device=device,
         loss=loss,
         loss_name=cfg["training"]["loss"]["name"],
