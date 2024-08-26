@@ -68,10 +68,6 @@ Static input data is data that does not change over time or for which we only ha
 ## Prerequisites
 ### Conda/Micromamba
 - Download and install conda or micromamba (recommended) : https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html
-#### GPU
-- To use GPU, make sure that `ndvidia::pytorch-cuda` is not commented inside `environment.yaml` so that the gpu dependencies will be installed and **comment out `pytorch::cpuonly`**
-#### CPU  
-- To use CPU, make sure that `pytorch::cpuonly` is not commented inside `environment.yaml` so that the cpu dependencies will be installed and **comment out `ndvidia::pytorch-cuda`**  
 #### Create Virtual Environment
 - Create a new environment using the `environment.yaml` file from this repository (see [this guide](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html#conda-yaml-spec-files)).
 - Activate your new environment (see [this guide](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html#quickstarts)).
