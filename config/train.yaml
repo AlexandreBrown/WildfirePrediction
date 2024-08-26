@@ -14,10 +14,9 @@ model:
       lr : 0.001
       weight_decay: 0.0001
   lr_scheduler:
-    name: "poly_lr"
+    name: "cosine_annealing_lr"
     params:
-      total_iters: 100
-      power: 1.0
+      T_max: 100
 output_path: "data/trainings/"
 data:
   split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-08-24_14-45-41/data_split_info.json'
@@ -28,7 +27,7 @@ training:
   max_nb_epochs: 100
   train_batch_size: 16
   eval_batch_size: 32
-  optimization_metric_name: "dice_loss"
+  optimization_metric_name: "ce_loss"
   minimize_optimization_metric: true
   data_augs:
     - name: "RandomVerticalFlip"
@@ -42,12 +41,18 @@ training:
         p: 0.5
         degrees: 35
   loss:
-    name: "dice_loss"
-    params:
-      mode: "binary"
-      log_loss: false
-      from_logits: true
+    name: "ce_loss"
+    params: {}
 logging:
+  metrics:
+    - name: "dice_loss"
+      params:
+        mode: "binary"
+        from_logits: true
+    - name: "ce_loss"
+      params: {}
+    - name: "pr_auc"
+      params: {}
   loggers:
     # - loguru
     - cometml

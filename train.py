@@ -107,6 +107,7 @@ def main(cfg: DictConfig):
         best_model_output_folder=best_model_output_folder,
         logger_factory=logger_factory,
         output_folder=base_folder,
+        metrics_config=cfg["logging"]["metrics"],
     )
 
     try:

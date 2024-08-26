@@ -2,7 +2,7 @@ import torch
 from torchmetrics.functional.classification import binary_average_precision
 
 
-class PrecisionRecallAuc:
+class PrecisionRecallAucMetric:
     def __init__(self):
         self.name = "pr_auc"
         self.running_sum = 0.0

@@ -8,7 +8,9 @@ from torch.utils.data import DataLoader
 from datasets.wildfire_data_module import WildfireDataModule
 from pathlib import Path
 from loggers.factory import LoggerFactory
-from metrics.pr_auc import PrecisionRecallAuc
+from metrics.pr_auc import PrecisionRecallAucMetric
+from metrics.loss_metric import LossMetric
+from losses.loss_factory import create_loss
 
 
 class SemanticSegmentationTrainer:
@@ -26,6 +28,7 @@ class SemanticSegmentationTrainer:
         best_model_output_folder: Path,
         logger_factory: LoggerFactory,
         output_folder: Path,
+        metrics_config: list,
     ):
         self.model = model.to(device)
         self.data_module = data_module
@@ -40,14 +43,33 @@ class SemanticSegmentationTrainer:
         self.best_model_output_folder.mkdir(parents=True, exist_ok=True)
         self.logger_factory = logger_factory
         self.output_folder = output_folder
-        self.train_metrics = self.create_metrics()
-        self.val_metrics = self.create_metrics()
-        self.test_metrics = self.create_metrics()
+        self.train_metrics = self.create_metrics(metrics_config)
+        self.val_metrics = self.create_metrics(metrics_config)
+        self.test_metrics = self.create_metrics(metrics_config)
         self.clear_best_model()
         logger.info("Trainer initialized!")
 
-    def create_metrics(self) -> list:
-        return [PrecisionRecallAuc()]
+    def create_metrics(self, metrics_config: list) -> list:
+        output = []
+        for metric_config in metrics_config:
+            metric_name = metric_config["name"]
+            metric_params = metric_config["params"]
+            if metric_name == "pr_auc":
+                output.append(PrecisionRecallAucMetric())
+            elif metric_name == self.loss_name:
+                output.append(LossMetric(self.loss, self.loss_name))
+            elif metric_name == "ce_loss" and metric_name != self.loss_name:
+                output.append(
+                    LossMetric(create_loss(metric_name, **metric_params), metric_name)
+                )
+            elif metric_name == "dice_loss" and metric_name != self.loss_name:
+                output.append(
+                    LossMetric(create_loss(metric_name, **metric_params), metric_name)
+                )
+            else:
+                raise ValueError(f"Unknown metric name: '{metric_name}'")
+
+        return output
 
     def train_model(self, max_nb_epochs: int, train_dl: DataLoader, val_dl: DataLoader):
         logger.info("Training model...")
@@ -125,8 +147,6 @@ class SemanticSegmentationTrainer:
     def train_model_for_1_epoch(self):
         self.model.train()
 
-        epoch_loss = 0.0
-
         train_loader = tqdm(self.train_dl, desc="Training", leave=False)
 
         for train_data in train_loader:
@@ -138,13 +158,11 @@ class SemanticSegmentationTrainer:
             y_hat = self.model(X)
             y_hat = torch.squeeze(y_hat, dim=1)
 
-            loss = self.loss(y_hat, y)
+            loss = self.loss(y_hat, y.float())
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-
-            self.train_logger.log_step_metric(self.loss_name, loss.item())
 
             for train_metric in self.train_metrics:
                 metric_value = train_metric(y_hat, y)
@@ -154,15 +172,10 @@ class SemanticSegmentationTrainer:
             formatted_metrics = self.train_logger.format_metrics(train_step_metrics)
             train_loader.set_postfix(formatted_metrics)
 
-            epoch_loss += loss.item()
-
             del X
             del y
             del y_hat
             del loss
-
-        epoch_loss /= len(self.train_dl)
-        self.train_logger.log_epoch_metric(self.loss_name, epoch_loss)
 
         for train_metric in self.train_metrics:
             metric_result = train_metric.compute()
@@ -171,8 +184,6 @@ class SemanticSegmentationTrainer:
     def validate_model(self):
         logger.debug("Validating model...")
         self.model.eval()
-
-        val_loss = 0.0
 
         val_loader = tqdm(self.val_dl, desc="Validation", leave=False)
 
@@ -185,9 +196,7 @@ class SemanticSegmentationTrainer:
                 y_hat = self.model(X)
                 y_hat = torch.squeeze(y_hat, dim=1)
 
-                loss = self.loss(y_hat, y)
-
-                val_loss += loss.item()
+                loss = self.loss(y_hat, y.float())
 
                 for val_metric in self.val_metrics:
                     val_metric(y_hat, y)
@@ -196,9 +205,6 @@ class SemanticSegmentationTrainer:
                 del y
                 del y_hat
                 del loss
-
-            val_loss /= len(self.val_dl)
-            self.val_logger.log_epoch_metric(self.loss_name, val_loss)
 
             for val_metric in self.val_metrics:
                 metric_result = val_metric.compute()
@@ -238,7 +244,6 @@ class SemanticSegmentationTrainer:
         )
         self.model.to(self.device)
 
-        test_loss = 0.0
         self.test_dl = test_dl
         self.test_logger = self.logger_factory.create("test_")
 
@@ -255,9 +260,7 @@ class SemanticSegmentationTrainer:
                 y_hat = self.model(X)
                 y_hat = torch.squeeze(y_hat, dim=1)
 
-                loss = self.loss(y_hat, y)
-
-                test_loss += loss.item()
+                loss = self.loss(y_hat, y.float())
 
                 for test_metric in self.test_metrics:
                     test_metric(y_hat, y)
@@ -266,9 +269,6 @@ class SemanticSegmentationTrainer:
                 del y
                 del y_hat
                 del loss
-
-        test_loss /= len(self.test_dl)
-        self.test_logger.log_epoch_metric(self.loss_name, test_loss)
 
         for test_metric in self.test_metrics:
             metric_result = test_metric.compute()
