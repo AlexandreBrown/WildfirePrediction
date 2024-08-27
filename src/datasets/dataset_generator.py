@@ -7,6 +7,7 @@ import numpy as np
 from osgeo import gdal
 from pathlib import Path
 from loguru import logger
+from typing import Optional
 from boundaries.canada_boundary import CanadaBoundary
 from grid.square_meters_grid import SquareMetersGrid
 from data_sources.nbac_fire_data_source import NbacFireDataSource
@@ -421,8 +422,6 @@ class DatasetGenerator:
                     year_output_folder,
                     data_type,
                     source_srid=self.config["projections"]["source_srid"],
-                    out_type="Float32",
-                    out_no_data_value=float(data_info["input_data_new_no_data_value"]),
                 )
                 logger.opt(lazy=True).debug(
                     "RAM Usage: {used:.2f}/{total:.2f}",
@@ -547,8 +546,6 @@ class DatasetGenerator:
                     static_output_folder_path,
                     data_type,
                     source_srid=self.config["projections"]["source_srid"],
-                    out_type="Float32",
-                    out_no_data_value=float(data_info["input_data_new_no_data_value"]),
                 )
                 logger.opt(lazy=True).debug(
                     "RAM Usage: {used:.2f}/{total:.2f}",
@@ -621,8 +618,8 @@ class DatasetGenerator:
         output_folder_path: Path,
         data_type: str,
         source_srid: int,
-        out_type: str,
-        out_no_data_value,
+        out_type: Optional[str] = None,
+        out_no_data_value=None,
     ):
         target_srid = self.config["projections"]["target_srid"]
 
@@ -672,26 +669,30 @@ class DatasetGenerator:
         )
         clipped_ouput_file_path.parent.mkdir(parents=True, exist_ok=True)
 
+        params = [
+            "--quiet",
+            "-overwrite",
+            "-multi",
+            "-cutline_srs",
+            f"EPSG:{self.canada_boundary.target_epsg}",
+            "-cutline",
+            f"{str(self.canada_boundary.boundary_file)}",
+            "-crop_to_cutline",
+        ]
+        if out_type is not None and out_no_data_value is not None:
+            params.append("-ot")
+            params.append(str(out_type))
+            params.append("-dstnodata")
+            params.append(str(out_no_data_value))
+
+        params.append("-of")
+        params.append("GTiff")
+        params.append(str(resized_output_file_path))
+        params.append(str(clipped_ouput_file_path))
+
         await self.run_command(
             "gdalwarp",
-            [
-                "--quiet",
-                "-overwrite",
-                "-multi",
-                "-cutline_srs",
-                f"EPSG:{self.canada_boundary.target_epsg}",
-                "-cutline",
-                f"{str(self.canada_boundary.boundary_file)}",
-                "-crop_to_cutline",
-                "-ot",
-                str(out_type),
-                "-dstnodata",
-                str(out_no_data_value),
-                "-of",
-                "GTiff",
-                str(resized_output_file_path),
-                str(clipped_ouput_file_path),
-            ],
+            params,
         )
 
         self.cleanup_file(resized_output_file_path)
