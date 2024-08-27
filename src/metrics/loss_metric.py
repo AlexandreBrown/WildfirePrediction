@@ -10,10 +10,10 @@ class LossMetric:
 
     def __call__(self, y_hat: torch.Tensor, y: torch.Tensor) -> float:
         with torch.no_grad():
-            dice_loss = self.loss(y_hat, y.float())
-            self.running_sum += dice_loss.item()
+            loss_result = self.loss(y_hat, y.float())
+            self.running_sum += loss_result.item()
             self.count += 1
-            return dice_loss.item()
+            return loss_result.item()
 
     def compute(self) -> float:
         return self.running_sum / self.count

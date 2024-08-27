@@ -50,7 +50,7 @@ def main(cfg: DictConfig):
         seed=cfg["seed"],
         train_batch_size=cfg["training"]["train_batch_size"],
         eval_batch_size=cfg["training"]["eval_batch_size"],
-        destination_no_data_value=cfg["data"]["destination_no_data_value"],
+        input_data_new_no_data_value=cfg["data"]["input_data_new_no_data_value"],
         train_folder_path=train_folder_path,
         val_folder_path=val_folder_path,
         test_folder_path=test_folder_path,
@@ -80,10 +80,6 @@ def main(cfg: DictConfig):
         optimizer, scheduler_config=cfg["model"]["lr_scheduler"]
     )
 
-    loss = create_loss(
-        cfg["training"]["loss"]["name"], **cfg["training"]["loss"]["params"]
-    )
-
     max_nb_epochs = cfg["training"]["max_nb_epochs"]
     logger.info(f"Max number of epochs: {max_nb_epochs}")
 
@@ -100,14 +96,14 @@ def main(cfg: DictConfig):
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         device=device,
-        loss=loss,
-        loss_name=cfg["training"]["loss"]["name"],
+        loss_name=cfg["training"]["loss_name"],
         optimization_metric_name=cfg["training"]["optimization_metric_name"],
         minimize_optimization_metric=cfg["training"]["minimize_optimization_metric"],
         best_model_output_folder=best_model_output_folder,
         logger_factory=logger_factory,
         output_folder=base_folder,
-        metrics_config=cfg["logging"]["metrics"],
+        metrics_config=cfg["metrics"],
+        target_no_data_value=cfg["data"]["target_no_data_value"],
     )
 
     try:

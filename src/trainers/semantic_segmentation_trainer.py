@@ -8,9 +8,9 @@ from torch.utils.data import DataLoader
 from datasets.wildfire_data_module import WildfireDataModule
 from pathlib import Path
 from loggers.factory import LoggerFactory
-from metrics.pr_auc import PrecisionRecallAucMetric
-from metrics.loss_metric import LossMetric
+from metrics.metric_factory import create_metrics
 from losses.loss_factory import create_loss
+from losses.nan_aware_loss import NanAwareLoss
 
 
 class SemanticSegmentationTrainer:
@@ -21,7 +21,6 @@ class SemanticSegmentationTrainer:
         optimizer,
         lr_scheduler,
         device: torch.device,
-        loss: nn.Module,
         loss_name: str,
         optimization_metric_name: str,
         minimize_optimization_metric: bool,
@@ -29,13 +28,13 @@ class SemanticSegmentationTrainer:
         logger_factory: LoggerFactory,
         output_folder: Path,
         metrics_config: list,
+        target_no_data_value: int,
     ):
         self.model = model.to(device)
         self.data_module = data_module
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         self.device = device
-        self.loss = loss
         self.loss_name = loss_name
         self.optimization_metric_name = optimization_metric_name
         self.minimize_optimization_metric = minimize_optimization_metric
@@ -43,33 +42,20 @@ class SemanticSegmentationTrainer:
         self.best_model_output_folder.mkdir(parents=True, exist_ok=True)
         self.logger_factory = logger_factory
         self.output_folder = output_folder
-        self.train_metrics = self.create_metrics(metrics_config)
-        self.val_metrics = self.create_metrics(metrics_config)
-        self.test_metrics = self.create_metrics(metrics_config)
+        loss_config = self.get_loss_config(metrics_config, loss_name)
+        self.loss = NanAwareLoss(
+            create_loss(loss_name, **loss_config["params"]), target_no_data_value
+        )
+        self.train_metrics = create_metrics(metrics_config)
+        self.val_metrics = create_metrics(metrics_config)
+        self.test_metrics = create_metrics(metrics_config)
         self.clear_best_model()
         logger.info("Trainer initialized!")
 
-    def create_metrics(self, metrics_config: list) -> list:
-        output = []
-        for metric_config in metrics_config:
-            metric_name = metric_config["name"]
-            metric_params = metric_config["params"]
-            if metric_name == "pr_auc":
-                output.append(PrecisionRecallAucMetric())
-            elif metric_name == self.loss_name:
-                output.append(LossMetric(self.loss, self.loss_name))
-            elif metric_name == "ce_loss" and metric_name != self.loss_name:
-                output.append(
-                    LossMetric(create_loss(metric_name, **metric_params), metric_name)
-                )
-            elif metric_name == "dice_loss" and metric_name != self.loss_name:
-                output.append(
-                    LossMetric(create_loss(metric_name, **metric_params), metric_name)
-                )
-            else:
-                raise ValueError(f"Unknown metric name: '{metric_name}'")
-
-        return output
+    def get_loss_config(self, metrics_config: list, loss_name: str) -> dict:
+        for metric in metrics_config:
+            if metric["name"] == loss_name:
+                return metric
 
     def train_model(self, max_nb_epochs: int, train_dl: DataLoader, val_dl: DataLoader):
         logger.info("Training model...")
