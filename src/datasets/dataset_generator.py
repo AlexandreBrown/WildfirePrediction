@@ -154,6 +154,10 @@ class DatasetGenerator:
                     tiles_preprocessing_output_folder,
                     data_type,
                     source_srid=self.config["projections"]["target_srid"],
+                    out_type="Int8",
+                    out_no_data_value=int(
+                        self.config["target_new_no_data_value"],
+                    ),
                 )
 
                 logger.info("Creating tiles...")
@@ -417,6 +421,8 @@ class DatasetGenerator:
                     year_output_folder,
                     data_type,
                     source_srid=self.config["projections"]["source_srid"],
+                    out_type="Float32",
+                    out_no_data_value=float(data_info["input_data_new_no_data_value"]),
                 )
                 logger.opt(lazy=True).debug(
                     "RAM Usage: {used:.2f}/{total:.2f}",
@@ -541,6 +547,8 @@ class DatasetGenerator:
                     static_output_folder_path,
                     data_type,
                     source_srid=self.config["projections"]["source_srid"],
+                    out_type="Float32",
+                    out_no_data_value=float(data_info["input_data_new_no_data_value"]),
                 )
                 logger.opt(lazy=True).debug(
                     "RAM Usage: {used:.2f}/{total:.2f}",
@@ -613,6 +621,8 @@ class DatasetGenerator:
         output_folder_path: Path,
         data_type: str,
         source_srid: int,
+        out_type: str,
+        out_no_data_value,
     ):
         target_srid = self.config["projections"]["target_srid"]
 
@@ -673,6 +683,10 @@ class DatasetGenerator:
                 "-cutline",
                 f"{str(self.canada_boundary.boundary_file)}",
                 "-crop_to_cutline",
+                "-ot",
+                str(out_type),
+                "-dstnodata",
+                str(out_no_data_value),
                 "-of",
                 "GTiff",
                 str(resized_output_file_path),
@@ -1051,7 +1065,7 @@ class DatasetGenerator:
     def update_nodata_value(self, file_path: Path, fill_values: list):
         dataset = gdal.Open(str(file_path), gdal.GA_Update)
 
-        new_nodata_value = float(self.config["no_data_value"])
+        new_nodata_value = float(self.config["input_data_new_no_data_value"])
 
         for band_index in range(1, dataset.RasterCount + 1):
             band = dataset.GetRasterBand(band_index)

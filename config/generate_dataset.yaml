@@ -22,11 +22,12 @@ projections:
   source_srid: 4326
   target_srid: 3978
 paths:
-  input_folder_path: "/media/user/c6e0bc12-4124-418d-9053-82363c4565f8/WildfirePrediction/data/download/"
+  input_folder_path: "data/download/"
   output_folder_path: "data/datasets/"
 max_io_concurrency: 8
 max_cpu_concurrency: 8
-no_data_value: -32768
+input_data_new_no_data_value: -32768
+target_new_no_data_value: 127
 cleanup_tmp_folder_on_success: false
 input_data:
     dynamic:
