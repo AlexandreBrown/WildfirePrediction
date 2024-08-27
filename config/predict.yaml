@@ -12,6 +12,7 @@ output_path: "data/predictions/"
 data:
   split_info_file_path: 'data/splits/holdout_split_2024-08-19_12-32-49/data_split_info.json'
   input_data_folder_path: 'data/datasets/eca32e80-f562-4e18-a015-57b2b27e3f68/input_data/2023_2023'
+  input_data_no_data_value: -32768.0
   input_data_new_no_data_value: -32768.0
   data_loading_num_workers: 4
   input_data_indexes_to_remove: []

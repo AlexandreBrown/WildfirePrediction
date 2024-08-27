@@ -14,7 +14,8 @@ from sklearn.model_selection import train_test_split
 from raster_io.read import get_extension
 from stats.image import ImageStats
 from torchvision.transforms import v2
-from transforms.replace_value_transform import ReplaceNanValueTransform
+from transforms.conditional_normalize import ConditionalNormalize
+from transforms.replace_value_transform import ReplaceNoDataValueTransform
 from datasets.wildfire_data import WildfireData
 from datasets.collate import CollateDataAugs
 
@@ -27,8 +28,9 @@ class WildfireDataModule:
         train_batch_size: int = 4,
         eval_batch_size: int = 8,
         model_input_size: int = 256,
+        input_data_no_data_value: float = -32768.0,
         input_data_new_no_data_value: float = -32768.0,
-        min_percent_pixels_with_valid_data: float = 0.75,
+        min_percent_pixels_with_valid_data: float = 0.25,
         input_data_periods_folders_paths: Optional[list] = None,
         target_periods_folders_paths: Optional[list] = None,
         train_periods: Optional[list] = None,
@@ -51,6 +53,7 @@ class WildfireDataModule:
         self.eval_batch_size = eval_batch_size
         self.model_input_size = model_input_size
         self.preprocessing_num_workers = preprocessing_num_workers
+        self.input_data_no_data_value = input_data_no_data_value
         self.input_data_new_no_data_value = input_data_new_no_data_value
         self.min_percent_pixels_with_valid_data = min_percent_pixels_with_valid_data
         self.train_stats = train_stats
@@ -271,18 +274,19 @@ class WildfireDataModule:
         del input_data_dataset
         del target_dataset
 
-        input_data_percent_pixels_with_valid_data = (
-            np.count_nonzero(input_data_data != input_data_no_data_value)
-            / input_data_data.size
-        )
+        num_bands = input_data_data.shape[0]
+
+        input_data_percent_valid_pixel = np.sum(
+            np.sum(input_data_data != input_data_no_data_value, axis=0)
+            >= num_bands // 2
+        ) / (input_data_data.shape[1] * input_data_data.shape[2])
 
         target_percent_pixels_with_valid_data = (
             np.count_nonzero(target_data != target_no_data_value) / target_data.size
         )
 
         if (
-            input_data_percent_pixels_with_valid_data
-            >= self.min_percent_pixels_with_valid_data
+            input_data_percent_valid_pixel >= self.min_percent_pixels_with_valid_data
             and target_percent_pixels_with_valid_data
             >= self.min_percent_pixels_with_valid_data
         ):
@@ -413,8 +417,11 @@ class WildfireDataModule:
 
         return v2.Compose(
             [
-                v2.Normalize(mean=mean, std=std),
-                ReplaceNanValueTransform(
+                ConditionalNormalize(
+                    mean=mean, std=std, nodata_value=self.input_data_no_data_value
+                ),
+                ReplaceNoDataValueTransform(
+                    nodata_value=self.input_data_no_data_value,
                     replace_value=self.input_data_new_no_data_value,
                 ),
             ]
@@ -429,8 +436,11 @@ class WildfireDataModule:
 
         return v2.Compose(
             [
-                v2.Normalize(mean=mean, std=std),
-                ReplaceNanValueTransform(
+                ConditionalNormalize(
+                    mean=mean, std=std, nodata_value=self.input_data_no_data_value
+                ),
+                ReplaceNoDataValueTransform(
+                    nodata_value=self.input_data_no_data_value,
                     replace_value=self.input_data_new_no_data_value,
                 ),
             ]

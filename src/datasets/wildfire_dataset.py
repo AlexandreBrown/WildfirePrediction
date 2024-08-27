@@ -46,6 +46,8 @@ class WildfireDataset(Dataset):
         )
 
         geotransform = torch.tensor(input_dataset.GetGeoTransform())
+        
+        del input_dataset
 
         if self.target_folder_path is None:
             if self.transform:
@@ -62,8 +64,6 @@ class WildfireDataset(Dataset):
                 input_data_img, target_mask = self.transform(
                     input_data_img, target_mask
                 )
-
-        del input_dataset
-        del target_dataset
+            del target_dataset
 
         return input_data_img, target_mask, geotransform

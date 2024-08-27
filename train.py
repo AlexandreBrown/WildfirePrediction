@@ -50,6 +50,7 @@ def main(cfg: DictConfig):
         seed=cfg["seed"],
         train_batch_size=cfg["training"]["train_batch_size"],
         eval_batch_size=cfg["training"]["eval_batch_size"],
+        input_data_no_data_value=cfg["data"]["input_data_no_data_value"],
         input_data_new_no_data_value=cfg["data"]["input_data_new_no_data_value"],
         train_folder_path=train_folder_path,
         val_folder_path=val_folder_path,

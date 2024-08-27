@@ -37,6 +37,7 @@ def main(cfg: DictConfig):
     data_module = WildfireDataModule(
         input_data_indexes_to_remove=cfg["data"]["input_data_indexes_to_remove"],
         eval_batch_size=cfg["predict"]["batch_size"],
+        input_data_no_data_value=cfg["data"]["input_data_no_data_value"],
         input_data_new_no_data_value=cfg["data"]["input_data_new_no_data_value"],
         predict_folder_path=predict_input_data_folder_path,
         train_stats=train_stats,
