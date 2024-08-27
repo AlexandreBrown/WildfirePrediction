@@ -1,8 +1,9 @@
-from omegaconf import OmegaConf
 import torch
 import subprocess
 import multiprocessing as mp
 import os
+import numpy as np
+from omegaconf import OmegaConf
 from loguru import logger
 from osgeo import gdal
 from pathlib import Path
@@ -26,7 +27,8 @@ class WildfireDataModule:
         train_batch_size: int = 4,
         eval_batch_size: int = 8,
         model_input_size: int = 256,
-        destination_no_data_value: float = -32768.0,
+        input_data_new_no_data_value: float = -32768.0,
+        min_percent_pixels_with_valid_data: float = 0.75,
         input_data_periods_folders_paths: Optional[list] = None,
         target_periods_folders_paths: Optional[list] = None,
         train_periods: Optional[list] = None,
@@ -49,7 +51,8 @@ class WildfireDataModule:
         self.eval_batch_size = eval_batch_size
         self.model_input_size = model_input_size
         self.preprocessing_num_workers = preprocessing_num_workers
-        self.destination_no_data_value = destination_no_data_value
+        self.input_data_new_no_data_value = input_data_new_no_data_value
+        self.min_percent_pixels_with_valid_data = min_percent_pixels_with_valid_data
         self.train_stats = train_stats
         self.generator = torch.Generator().manual_seed(seed)
         self.output_folder_path = output_folder_path
@@ -127,11 +130,33 @@ class WildfireDataModule:
             self.preprocess_tiles(
                 self.val_folder_path, val_input_files, val_target_files
             )
+            val_input_files = self.get_files(
+                [self.val_folder_path / self.input_folder_name]
+            )
+            val_target_files = self.get_files(
+                [self.val_folder_path / self.target_folder_name]
+            )
+            val_input_files, val_target_files = self.perform_quality_check(
+                val_input_files, val_target_files
+            )
+            logger.info(f"Validation input files: {len(val_input_files)}")
+            logger.info(f"Validation target files: {len(val_target_files)}")
 
         logger.info("Preprocessing train files...")
         self.preprocess_tiles(
             self.train_folder_path, train_input_files, train_target_files
         )
+        train_input_files = self.get_files(
+            [self.train_folder_path / self.input_folder_name]
+        )
+        train_target_files = self.get_files(
+            [self.train_folder_path / self.target_folder_name]
+        )
+        train_input_files, train_target_files = self.perform_quality_check(
+            train_input_files, train_target_files
+        )
+        logger.info(f"Train input files: {len(train_input_files)}")
+        logger.info(f"Train target files: {len(train_target_files)}")
 
         logger.info("Computing training statistics...")
         stats = ImageStats()
@@ -142,6 +167,17 @@ class WildfireDataModule:
         self.preprocess_tiles(
             self.test_folder_path, test_input_files, test_target_files
         )
+        test_input_files = self.get_files(
+            [self.test_folder_path / self.input_folder_name]
+        )
+        test_target_files = self.get_files(
+            [self.test_folder_path / self.target_folder_name]
+        )
+        test_input_files, test_target_files = self.perform_quality_check(
+            test_input_files, test_target_files
+        )
+        logger.info(f"Test input files: {len(test_input_files)}")
+        logger.info(f"Test target files: {len(test_target_files)}")
 
         logger.success("Data split completed!")
 
@@ -185,6 +221,75 @@ class WildfireDataModule:
             test_targets_folders_paths,
         )
 
+    def perform_quality_check(
+        self, input_data_files: list, target_files: list
+    ) -> tuple:
+        logger.info("Performing quality check...")
+
+        nb_processes = min(len(input_data_files), self.preprocessing_num_workers)
+        with mp.Pool(processes=nb_processes) as pool:
+            results = pool.starmap(
+                self.quality_check_file,
+                zip(sorted(input_data_files), sorted(target_files)),
+            )
+
+        input_data_files_kept = set(
+            [result[0] for result in results if result is not None]
+        )
+        target_files_kept = set([result[1] for result in results if result is not None])
+
+        input_data_files_to_remove = set(input_data_files) - input_data_files_kept
+        target_files_to_remove = set(target_files) - target_files_kept
+
+        logger.info(
+            f"Removing {len(input_data_files_to_remove)} input data files that did not pass the quality check..."
+        )
+        logger.info(
+            f"Removing {len(target_files_to_remove)} target files that did not pass the quality check..."
+        )
+
+        for input_data_file, target_file in zip(
+            input_data_files_to_remove, target_files_to_remove
+        ):
+            input_data_file.unlink()
+            target_file.unlink()
+
+        return sorted(input_data_files_kept), sorted(target_files_kept)
+
+    def quality_check_file(self, input_data_file: Path, target_file: Path) -> tuple:
+        assert input_data_file.stem == target_file.stem
+
+        input_data_dataset = gdal.Open(str(input_data_file), gdal.GA_ReadOnly)
+        target_dataset = gdal.Open(str(target_file), gdal.GA_ReadOnly)
+
+        input_data_no_data_value = input_data_dataset.GetRasterBand(1).GetNoDataValue()
+        target_no_data_value = target_dataset.GetRasterBand(1).GetNoDataValue()
+
+        input_data_data = input_data_dataset.ReadAsArray()
+        target_data = target_dataset.ReadAsArray()
+
+        del input_data_dataset
+        del target_dataset
+
+        input_data_percent_pixels_with_valid_data = (
+            np.count_nonzero(input_data_data != input_data_no_data_value)
+            / input_data_data.size
+        )
+
+        target_percent_pixels_with_valid_data = (
+            np.count_nonzero(target_data != target_no_data_value) / target_data.size
+        )
+
+        if (
+            input_data_percent_pixels_with_valid_data
+            >= self.min_percent_pixels_with_valid_data
+            and target_percent_pixels_with_valid_data
+            >= self.min_percent_pixels_with_valid_data
+        ):
+            return input_data_file, target_file
+
+        return None
+
     def preprocess_tiles(
         self, output_folder: Path, input_files: list, target_files: list
     ):
@@ -198,7 +303,7 @@ class WildfireDataModule:
             input_files, input_data_folder, output_type="Float32"
         )
         self.create_tiles_sized_for_model(
-            target_files, target_folder, output_type="Byte"
+            target_files, target_folder, output_type="Int8"
         )
 
     def create_tiles_sized_for_model(
@@ -310,7 +415,7 @@ class WildfireDataModule:
             [
                 v2.Normalize(mean=mean, std=std),
                 ReplaceNanValueTransform(
-                    replace_value=self.destination_no_data_value,
+                    replace_value=self.input_data_new_no_data_value,
                 ),
             ]
         )
@@ -326,7 +431,7 @@ class WildfireDataModule:
             [
                 v2.Normalize(mean=mean, std=std),
                 ReplaceNanValueTransform(
-                    replace_value=self.destination_no_data_value,
+                    replace_value=self.input_data_new_no_data_value,
                 ),
             ]
         )

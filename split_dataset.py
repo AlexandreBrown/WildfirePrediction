@@ -49,6 +49,9 @@ def main(cfg: DictConfig):
         preprocessing_num_workers=cfg["data"]["preprocessing_num_workers"],
         output_folder_path=output_folder_path,
         device=device,
+        min_percent_pixels_with_valid_data=cfg["data"][
+            "min_percent_pixels_with_valid_data"
+        ],
     )
 
     data_split_info = data_module.split_data()

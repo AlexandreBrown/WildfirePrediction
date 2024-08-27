@@ -37,9 +37,10 @@ data:
     - 'data/datasets/16f47c6b-fff0-424e-b5b5-b55ad6137cee/target/2010_2010'
   output_folder_path: 'data/splits/'
   preprocessing_num_workers: 8
+  min_percent_pixels_with_valid_data: 0.25
 training:
-  val_split: 0.2
+  val_split: 0.25
   train_periods:
     start_inclusive: 2010
-    end_inclusive: 2019
+    end_inclusive: 2020
     period_length_in_years: 1

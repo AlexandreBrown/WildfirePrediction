@@ -279,7 +279,6 @@ class FireOccurrenceTarget:
             )
         )
         output_band = output_combined_raster_ds.GetRasterBand(1)
-        output_band.Fill(0)
         output_band.WriteArray(combined_raster_data)
 
         del output_combined_raster_ds
