@@ -45,7 +45,6 @@ def main(cfg: DictConfig):
         device=device,
     )
 
-    logger.info("Setting up data module...")
     data_module.setup(stage="predict")
 
     predict_dl = data_module.predict_dataloader()

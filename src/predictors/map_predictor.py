@@ -38,21 +38,24 @@ class MapPredictor:
 
         predictions_files = []
 
-        for predict_data in predict_loader:
+        with torch.no_grad():
+            for predict_data in predict_loader:
 
-            images = predict_data.images
-            geotransforms = predict_data.geotransforms
+                images = predict_data.images.to(self.device)
+                geotransforms = predict_data.geotransforms
 
-            y_hat = self.model(images)
-            y_hat = torch.squeeze(y_hat, dim=1)
+                y_hat = self.model(images)
+                y_hat = torch.squeeze(y_hat, dim=1)
 
-            if self.use_probabilities:
-                y_hat = torch.sigmoid(y_hat)
+                if self.use_probabilities:
+                    y_hat = torch.sigmoid(y_hat)
 
-            for i, prediction in enumerate(y_hat):
-                geotransform = geotransforms[i]
-                predictions_files.append(self.save_prediction(prediction, geotransform))
-                self.predictions_saved += 1
+                for i, prediction in enumerate(y_hat):
+                    geotransform = geotransforms[i]
+                    predictions_files.append(
+                        self.save_prediction(prediction, geotransform)
+                    )
+                    self.predictions_saved += 1
 
         logger.success(f"Generated {self.predictions_saved} predictions!")
 
@@ -65,7 +68,7 @@ class MapPredictor:
         output_file = Path(self.output_folder_path) / Path(
             f"{self.predictions_saved}{get_extension('GTiff')}"
         )
-        height, width = prediction.shape[1], prediction.shape[2]
+        height, width = prediction.shape[0], prediction.shape[1]
         output_dataset = driver.Create(
             str(output_file),
             width,

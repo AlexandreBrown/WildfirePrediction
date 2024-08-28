@@ -16,21 +16,21 @@ model:
   lr_scheduler:
     name: "exponential_lr"
     params:
-      gamma: 0.99
+      gamma: 0.95
 output_path: "data/trainings/"
 data:
   split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-08-27_20-02-42/data_split_info.json'
   input_data_no_data_value: -32768.0
-  input_data_new_no_data_value: 0.0
+  input_data_new_no_data_value: -100.0
   target_no_data_value: 127
   data_loading_num_workers: 6
   input_data_indexes_to_remove: []
 training:
-  max_nb_epochs: 50
+  max_nb_epochs: 10
   train_batch_size: 16
   eval_batch_size: 32
-  loss_name: "dice_loss"
-  optimization_metric_name: "dice_loss"
+  loss_name: "ce_dice_loss"
+  optimization_metric_name: "ce_dice_loss"
   minimize_optimization_metric: true
   data_augs:
     - name: "RandomVerticalFlip"

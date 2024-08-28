@@ -46,13 +46,15 @@ class WildfireDataset(Dataset):
         )
 
         geotransform = torch.tensor(input_dataset.GetGeoTransform())
-        
+
         del input_dataset
 
         if self.target_folder_path is None:
-            if self.transform:
-                input_data_img = self.transform(input_data_img)
-            target_mask = torch.zeros(input_data_img.shape[1], input_data_img.shape[2])
+            target_mask = tv_tensors.Mask(
+                torch.zeros(
+                    input_data_img.shape[1], input_data_img.shape[2], dtype=torch.int8
+                )
+            )
         else:
             target_dataset = gdal.Open(str(self.target_file_paths[idx]))
             target_data_numpy = target_dataset.ReadAsArray()
@@ -60,10 +62,9 @@ class WildfireDataset(Dataset):
                 torch.from_numpy(target_data_numpy), dtype=torch.int8
             )
 
-            if self.transform:
-                input_data_img, target_mask = self.transform(
-                    input_data_img, target_mask
-                )
             del target_dataset
+
+        if self.transform:
+            input_data_img, target_mask = self.transform(input_data_img, target_mask)
 
         return input_data_img, target_mask, geotransform

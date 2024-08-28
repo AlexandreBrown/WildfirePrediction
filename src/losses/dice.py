@@ -22,7 +22,7 @@ class BinarySoftDiceLoss(torch.nn.Module):
         assert predictions.shape == target.shape
 
         if self.from_logits:
-            predictions = F.logsigmoid(predictions).exp()
+            predictions = torch.sigmoid(predictions)
 
         predictions = predictions.reshape(predictions.shape[0], 1, -1)
         target = target.reshape(target.shape[0], 1, -1)
