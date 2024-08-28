@@ -9,6 +9,6 @@ class ReplaceNoDataValueTransform(nn.Module):
         self.replace_value = replace_value
 
     def forward(self, img: tv_tensors.Image, mask: tv_tensors.Mask) -> tuple:
-        mask = img == self.nodata_value
-        img[mask] = self.replace_value
+        not_valid_data_mask = img == self.nodata_value
+        img[not_valid_data_mask] = self.replace_value
         return img, mask

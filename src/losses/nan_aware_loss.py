@@ -11,10 +11,6 @@ class NanAwareLoss(nn.Module):
 
     def forward(self, predictions: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         nan_target_mask = target == self.target_no_data_value
-        if nan_target_mask.sum() > 0:
-            logger.warning(
-                f"Found {nan_target_mask.sum()}/{target.numel()} NaN values in target, ignoring the nodata values in loss computation!"
-            )
 
         valid_mask = ~nan_target_mask
 

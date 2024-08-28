@@ -3,7 +3,6 @@ import torch
 import numpy as np
 import hydra
 import json
-from losses.loss_factory import create_loss
 from models.cnn.unet.model import UnetModel
 from datasets.wildfire_data_module import WildfireDataModule
 from optimizers.optimizer_factory import create_optimizer

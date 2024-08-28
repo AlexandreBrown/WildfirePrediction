@@ -46,9 +46,9 @@ class SemanticSegmentationTrainer:
         self.loss = NanAwareLoss(
             create_loss(loss_name, **loss_config["params"]), target_no_data_value
         )
-        self.train_metrics = create_metrics(metrics_config)
-        self.val_metrics = create_metrics(metrics_config)
-        self.test_metrics = create_metrics(metrics_config)
+        self.train_metrics = create_metrics(metrics_config, target_no_data_value)
+        self.val_metrics = create_metrics(metrics_config, target_no_data_value)
+        self.test_metrics = create_metrics(metrics_config, target_no_data_value)
         self.clear_best_model()
         logger.info("Trainer initialized!")
 
@@ -73,6 +73,8 @@ class SemanticSegmentationTrainer:
 
         for _ in epochs:
             self.epoch += 1
+            current_lr = self.get_lr()
+            self.train_logger.log_epoch_metric("lr", current_lr)
             self.train_model_for_1_epoch()
             self.validate_model()
             train_epoch_metrics = self.train_logger.on_epoch_end(self.epoch)
@@ -99,6 +101,10 @@ class SemanticSegmentationTrainer:
         self.save_training_results(train_results)
 
         logger.success("Training completed successfully!")
+
+    def get_lr(self):
+        for param_group in self.optimizer.param_groups:
+            return param_group["lr"]
 
     def update_epoch_metrics_progress(
         self, epochs, train_epoch_metrics, val_epoch_metrics
@@ -164,7 +170,7 @@ class SemanticSegmentationTrainer:
             del loss
 
         for train_metric in self.train_metrics:
-            metric_result = train_metric.compute()
+            metric_result = train_metric.aggregate()
             self.train_logger.log_epoch_metric(train_metric.name, metric_result)
 
     def validate_model(self):
@@ -193,7 +199,7 @@ class SemanticSegmentationTrainer:
                 del loss
 
             for val_metric in self.val_metrics:
-                metric_result = val_metric.compute()
+                metric_result = val_metric.aggregate()
                 self.val_logger.log_epoch_metric(val_metric.name, metric_result)
 
     def update_best_model(self, val_epoch_metrics: dict):
@@ -257,7 +263,7 @@ class SemanticSegmentationTrainer:
                 del loss
 
         for test_metric in self.test_metrics:
-            metric_result = test_metric.compute()
+            metric_result = test_metric.aggregate()
             self.test_logger.log_epoch_metric(test_metric.name, metric_result)
 
         self.test_logger.on_epoch_end(epoch=1)

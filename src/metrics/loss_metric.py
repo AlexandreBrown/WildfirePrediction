@@ -1,19 +1,12 @@
 import torch
+from metrics.metric import Metric
 
 
-class LossMetric:
-    def __init__(self, loss, name: str):
-        self.name = name
-        self.running_sum = 0.0
-        self.count = 0
+class LossMetric(Metric):
+    def __init__(self, target_no_data_value: int, loss: torch.nn.Module, name: str):
+        super().__init__(target_no_data_value)
         self.loss = loss
+        self.name = name
 
-    def __call__(self, y_hat: torch.Tensor, y: torch.Tensor) -> float:
-        with torch.no_grad():
-            loss_result = self.loss(y_hat, y.float())
-            self.running_sum += loss_result.item()
-            self.count += 1
-            return loss_result.item()
-
-    def compute(self) -> float:
-        return self.running_sum / self.count
+    def compute(self, y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return self.loss(y_hat, y.float())

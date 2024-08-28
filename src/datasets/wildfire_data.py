@@ -42,8 +42,6 @@ class WildfireData:
             ),
             batch_size=[len(dataset)],
         )
-        # locks the tensorclass and ensures that is_memmap will return True.
-        data.memmap_()
 
         data_loader = DataLoader(dataset, batch_size=batch, num_workers=num_workers)
         i = 0
