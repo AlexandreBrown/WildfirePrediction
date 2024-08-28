@@ -52,6 +52,9 @@ def main(cfg: DictConfig):
         min_percent_pixels_with_valid_data=cfg["data"][
             "min_percent_pixels_with_valid_data"
         ],
+        input_data_min_fraction_of_bands_with_valid_data=cfg["data"][
+            "input_data_min_fraction_of_bands_with_valid_data"
+        ],
     )
 
     data_split_info = data_module.split_data()

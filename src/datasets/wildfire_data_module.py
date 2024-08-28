@@ -31,6 +31,7 @@ class WildfireDataModule:
         input_data_no_data_value: float = -32768.0,
         input_data_new_no_data_value: float = -32768.0,
         min_percent_pixels_with_valid_data: float = 0.25,
+        input_data_min_fraction_of_bands_with_valid_data: float = 0.5,
         input_data_periods_folders_paths: Optional[list] = None,
         target_periods_folders_paths: Optional[list] = None,
         train_periods: Optional[list] = None,
@@ -56,6 +57,9 @@ class WildfireDataModule:
         self.input_data_no_data_value = input_data_no_data_value
         self.input_data_new_no_data_value = input_data_new_no_data_value
         self.min_percent_pixels_with_valid_data = min_percent_pixels_with_valid_data
+        self.input_data_min_fraction_of_bands_with_valid_data = (
+            input_data_min_fraction_of_bands_with_valid_data
+        )
         self.train_stats = train_stats
         self.generator = torch.Generator().manual_seed(seed)
         self.output_folder_path = output_folder_path
@@ -276,10 +280,24 @@ class WildfireDataModule:
 
         num_bands = input_data_data.shape[0]
 
-        input_data_percent_valid_pixel = np.sum(
-            np.sum(input_data_data != input_data_no_data_value, axis=0)
-            >= num_bands // 2
-        ) / (input_data_data.shape[1] * input_data_data.shape[2])
+        nb_channels_with_valid_data_for_each_pixel = np.sum(
+            input_data_data != input_data_no_data_value, axis=0
+        )
+
+        input_data_min_nb_bands_with_valid_data = int(
+            num_bands * self.input_data_min_fraction_of_bands_with_valid_data
+        )
+
+        input_data_nb_pixels_with_enough_valid_bands = np.sum(
+            nb_channels_with_valid_data_for_each_pixel
+            >= input_data_min_nb_bands_with_valid_data
+        )
+
+        input_data_nb_pixels_total = input_data_data.shape[1] * input_data_data.shape[2]
+
+        input_data_percent_valid_pixel = (
+            input_data_nb_pixels_with_enough_valid_bands / input_data_nb_pixels_total
+        )
 
         target_percent_pixels_with_valid_data = (
             np.count_nonzero(target_data != target_no_data_value) / target_data.size

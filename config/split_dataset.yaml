@@ -38,6 +38,7 @@ data:
   output_folder_path: 'data/splits/'
   preprocessing_num_workers: 8
   min_percent_pixels_with_valid_data: 0.25
+  input_data_min_fraction_of_bands_with_valid_data: 0.5
 training:
   val_split: 0.2
   train_periods:
