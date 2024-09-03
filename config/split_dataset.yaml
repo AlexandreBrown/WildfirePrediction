@@ -39,6 +39,7 @@ data:
   preprocessing_num_workers: 8
   min_percent_pixels_with_valid_data: 0.25
   input_data_min_fraction_of_bands_with_valid_data: 0.5
+  max_no_fire_proportion: 0.1
 training:
   val_split: 0.2
   train_periods:

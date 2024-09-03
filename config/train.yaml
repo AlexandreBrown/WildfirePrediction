@@ -19,14 +19,14 @@ model:
       gamma: 0.95
 output_path: "data/trainings/"
 data:
-  split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-08-27_20-02-42/data_split_info.json'
+  split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-09-03_12-39-00/data_split_info.json'
   input_data_no_data_value: -32768.0
-  input_data_new_no_data_value: -100.0
+  input_data_new_no_data_value: -10.0
   target_no_data_value: 127
   data_loading_num_workers: 6
   input_data_indexes_to_remove: []
 training:
-  max_nb_epochs: 10
+  max_nb_epochs: 25
   train_batch_size: 16
   eval_batch_size: 32
   loss_name: "ce_dice_loss"
@@ -39,11 +39,15 @@ training:
     - name: "RandomHorizontalFlip"
       params:
         p: 0.5
+    # - name: "RandomRotate"
+    #   params:
+    #     p: 0.5
+    #     fill: -10.0
 metrics:
   - name: "ce_dice_loss"
     params:
-      ce_weight: 0.25
-      dice_weight: 0.75
+      ce_weight: 0.1
+      dice_weight: 0.9
       ce_params: {}
       dice_params:
         smooth: 1e-5

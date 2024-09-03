@@ -55,6 +55,7 @@ def main(cfg: DictConfig):
         input_data_min_fraction_of_bands_with_valid_data=cfg["data"][
             "input_data_min_fraction_of_bands_with_valid_data"
         ],
+        max_no_fire_proportion=cfg["data"]["max_no_fire_proportion"],
     )
 
     data_split_info = data_module.split_data()

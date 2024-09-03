@@ -32,6 +32,7 @@ class WildfireDataModule:
         input_data_new_no_data_value: float = -32768.0,
         min_percent_pixels_with_valid_data: float = 0.25,
         input_data_min_fraction_of_bands_with_valid_data: float = 0.5,
+        max_no_fire_proportion: float = 0.1,
         input_data_periods_folders_paths: Optional[list] = None,
         target_periods_folders_paths: Optional[list] = None,
         train_periods: Optional[list] = None,
@@ -60,6 +61,7 @@ class WildfireDataModule:
         self.input_data_min_fraction_of_bands_with_valid_data = (
             input_data_min_fraction_of_bands_with_valid_data
         )
+        self.max_no_fire_proportion = max_no_fire_proportion
         self.train_stats = train_stats
         self.generator = torch.Generator().manual_seed(seed)
         self.output_folder_path = output_folder_path
@@ -144,7 +146,7 @@ class WildfireDataModule:
                 [self.val_folder_path / self.target_folder_name]
             )
             val_input_files, val_target_files = self.perform_quality_check(
-                val_input_files, val_target_files
+                val_input_files, val_target_files, remove_no_fire=False
             )
             logger.info(f"Validation input files: {len(val_input_files)}")
             logger.info(f"Validation target files: {len(val_target_files)}")
@@ -160,7 +162,7 @@ class WildfireDataModule:
             [self.train_folder_path / self.target_folder_name]
         )
         train_input_files, train_target_files = self.perform_quality_check(
-            train_input_files, train_target_files
+            train_input_files, train_target_files, remove_no_fire=True
         )
         logger.info(f"Train input files: {len(train_input_files)}")
         logger.info(f"Train target files: {len(train_target_files)}")
@@ -181,7 +183,7 @@ class WildfireDataModule:
             [self.test_folder_path / self.target_folder_name]
         )
         test_input_files, test_target_files = self.perform_quality_check(
-            test_input_files, test_target_files
+            test_input_files, test_target_files, remove_no_fire=False
         )
         logger.info(f"Test input files: {len(test_input_files)}")
         logger.info(f"Test target files: {len(test_target_files)}")
@@ -229,7 +231,7 @@ class WildfireDataModule:
         )
 
     def perform_quality_check(
-        self, input_data_files: list, target_files: list
+        self, input_data_files: list, target_files: list, remove_no_fire: bool = False
     ) -> tuple:
         logger.info("Performing quality check...")
 
@@ -240,30 +242,60 @@ class WildfireDataModule:
                 zip(sorted(input_data_files), sorted(target_files)),
             )
 
+        nb_files_removed_due_to_bad_quality = 0
+        for result in results:
+            if not result["passed_quality_check"]:
+                nb_files_removed_due_to_bad_quality += 1
+                result["input_data_path"].unlink()
+                result["target_path"].unlink()
+
+        logger.info(
+            f"Removed {nb_files_removed_due_to_bad_quality} files that did not pass the quality check!"
+        )
+
+        if remove_no_fire:
+            nb_files_left = len(results) - nb_files_removed_due_to_bad_quality
+
+            nb_no_fire_files = sum(1 for result in results if result["all_no_fire"])
+
+            max_nb_files_no_fire = int(
+                self.max_no_fire_proportion * (nb_files_left - nb_no_fire_files)
+            )
+
+            logger.info(f"Max number of no fire files: {max_nb_files_no_fire}")
+            nb_no_fire_files = 0
+            nb_files_removed_due_to_no_fire = 0
+            for result in results:
+                if result["all_no_fire"] and result["input_data_path"].exists():
+                    if nb_no_fire_files > max_nb_files_no_fire:
+                        nb_files_removed_due_to_no_fire += 1
+                        result["input_data_path"].unlink()
+                        result["target_path"].unlink()
+
+                    nb_no_fire_files += 1
+
+            logger.info(
+                f"Removed {nb_files_removed_due_to_no_fire} files that contain only no fire pixels!"
+            )
+
         input_data_files_kept = set(
-            [result[0] for result in results if result is not None]
+            [
+                result["input_data_path"]
+                for result in results
+                if result["input_data_path"].exists()
+            ]
         )
-        target_files_kept = set([result[1] for result in results if result is not None])
-
-        input_data_files_to_remove = set(input_data_files) - input_data_files_kept
-        target_files_to_remove = set(target_files) - target_files_kept
-
-        logger.info(
-            f"Removing {len(input_data_files_to_remove)} input data files that did not pass the quality check..."
+        target_files_kept = set(
+            [
+                result["target_path"]
+                for result in results
+                if result["target_path"].exists()
+            ]
         )
-        logger.info(
-            f"Removing {len(target_files_to_remove)} target files that did not pass the quality check..."
-        )
-
-        for input_data_file, target_file in zip(
-            input_data_files_to_remove, target_files_to_remove
-        ):
-            input_data_file.unlink()
-            target_file.unlink()
 
         return sorted(input_data_files_kept), sorted(target_files_kept)
 
-    def quality_check_file(self, input_data_file: Path, target_file: Path) -> tuple:
+    def quality_check_file(self, input_data_file: Path, target_file: Path) -> dict:
         assert input_data_file.stem == target_file.stem
 
         input_data_dataset = gdal.Open(str(input_data_file), gdal.GA_ReadOnly)
@@ -303,14 +335,20 @@ class WildfireDataModule:
             np.count_nonzero(target_data != target_no_data_value) / target_data.size
         )
 
-        if (
+        passed_quality_check = (
             input_data_percent_valid_pixel >= self.min_percent_pixels_with_valid_data
             and target_percent_pixels_with_valid_data
             >= self.min_percent_pixels_with_valid_data
-        ):
-            return input_data_file, target_file
+        )
 
-        return None
+        all_no_fire = np.all(target_data == 0)
+
+        return {
+            "input_data_path": input_data_file,
+            "target_path": target_file,
+            "passed_quality_check": passed_quality_check,
+            "all_no_fire": all_no_fire,
+        }
 
     def preprocess_tiles(
         self, output_folder: Path, input_files: list, target_files: list
