@@ -8,6 +8,7 @@ from pathlib import Path
 from loguru import logger
 from tqdm import tqdm
 from raster_io.read import get_extension
+from boundaries.canada_boundary import CanadaBoundary
 
 
 class MapPredictor:
@@ -16,12 +17,14 @@ class MapPredictor:
         model: nn.Module,
         device: torch.device,
         output_folder_path: Path,
+        canada_boundary: CanadaBoundary,
         convert_model_output_to_probabilities: bool = True,
         data_srid: int = 3978,
     ):
         self.model = model.to(device)
         self.device = device
         self.output_folder_path = output_folder_path
+        self.canada_boundary = canada_boundary
         self.use_probabilities = convert_model_output_to_probabilities
         self.output_folder_path.mkdir(parents=True, exist_ok=True)
         self.data_srid = data_srid
@@ -118,11 +121,38 @@ class MapPredictor:
 
         vrt_file.unlink()
 
-        logger.success(
-            f"Merged predictions saved to {str(merged_predictions_output_file)}"
+        canada_boundary_file = self.canada_boundary.save(self.output_folder_path)
+
+        logger.info("Clipping merged predictions to Canada boundary...")
+        clipped_merged_predictions_output_file = (
+            merged_predictions_output_file.with_stem("predictions_output_clipped")
+        )
+        params = [
+            "--quiet",
+            "-overwrite",
+            "-multi",
+            "-cutline_srs",
+            f"EPSG:{self.canada_boundary.target_epsg}",
+            "-cutline",
+            f"{str(canada_boundary_file)}",
+            "-crop_to_cutline",
+            "-dstnodata",
+            "0",
+            "-of",
+            "GTiff",
+            str(merged_predictions_output_file),
+            str(clipped_merged_predictions_output_file),
+        ]
+
+        await self.run_command(
+            "gdalwarp",
+            params,
         )
 
-        return merged_predictions_output_file
+        merged_predictions_output_file.unlink()
+        canada_boundary_file.unlink()
+
+        return clipped_merged_predictions_output_file
 
     async def run_command(self, program: str, commands: list):
         proc = await asyncio.create_subprocess_exec(

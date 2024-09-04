@@ -3,6 +3,7 @@ import asyncio
 import torch
 import hydra
 import json
+import shutil
 from models.cnn.unet.model import UnetModel
 from datasets.wildfire_data_module import WildfireDataModule
 from pathlib import Path
@@ -10,6 +11,8 @@ from loguru import logger
 from omegaconf import DictConfig
 from predictors.map_predictor import MapPredictor
 from logging_utils.logging import setup_logger
+from boundaries.canada_boundary import CanadaBoundary
+from data_sources.canada_boundary_data_source import CanadaBoundaryDataSource
 
 
 @hydra.main(version_base=None, config_path="config", config_name="predict")
@@ -22,6 +25,12 @@ def main(cfg: DictConfig):
 
     run_output_path = Path(cfg["output_path"]) / Path(cfg["run"]["name"])
     run_output_path.mkdir(parents=True, exist_ok=True)
+
+    predict_tmp_output_path = run_output_path / Path("tmp")
+    predict_tmp_output_path.mkdir(parents=True, exist_ok=True)
+
+    predict_final_output_path = run_output_path / Path("maps")
+    predict_final_output_path.mkdir(parents=True, exist_ok=True)
 
     logger.info("Loading split info...")
     with open(Path(cfg["data"]["split_info_file_path"]), "r") as f:
@@ -67,15 +76,26 @@ def main(cfg: DictConfig):
     convert_model_output_to_probabilities = cfg["predict"][
         "convert_model_output_to_probabilities"
     ]
+
+    canada_boundary = CanadaBoundary(
+        data_source=CanadaBoundaryDataSource(output_path=predict_tmp_output_path),
+        target_epsg=cfg["data"]["target_srid"],
+    )
+    canada_boundary.load(list(cfg["data"]["provinces"]))
+
     predictor = MapPredictor(
         model=model,
         device=device,
-        output_folder_path=run_output_path,
+        output_folder_path=predict_tmp_output_path,
+        canada_boundary=canada_boundary,
         convert_model_output_to_probabilities=convert_model_output_to_probabilities,
     )
 
     try:
-        asyncio.run(predictor.predict(predict_dl))
+        final_map_output_path = asyncio.run(predictor.predict(predict_dl))
+        shutil.move(final_map_output_path, predict_final_output_path)
+        logger.success(f"Predictions saved at: {predict_final_output_path}")
+        shutil.rmtree(predict_tmp_output_path)
     except InterruptedExperiment as exc:
         logger.info("status", str(exc))
         logger.info("Experiment interrupted!")

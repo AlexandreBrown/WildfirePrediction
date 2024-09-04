@@ -17,7 +17,7 @@ model:
     name: "one_cycle_lr"
     params:
       max_lr: 0.0001
-      epochs: 1
+      epochs: 50
       steps_per_epoch: 202
 output_path: "data/trainings/"
 data:
@@ -28,19 +28,19 @@ data:
   data_loading_num_workers: 6
   input_data_indexes_to_remove: []
 training:
-  max_nb_epochs: 1
+  max_nb_epochs: 50
   train_batch_size: 16
   eval_batch_size: 32
   loss_name: "dice_loss"
   optimization_metric_name: "dice_loss"
   minimize_optimization_metric: true
-  data_augs:
-    - name: "RandomVerticalFlip"
-      params:
-        p: 0.5
-    - name: "RandomHorizontalFlip"
-      params:
-        p: 0.5
+  data_augs: []
+    # - name: "RandomVerticalFlip"
+    #   params:
+    #     p: 0.5
+    # - name: "RandomHorizontalFlip"
+    #   params:
+    #     p: 0.5
     # - name: "RandomRotate"
     #   params:
     #     p: 0.5
