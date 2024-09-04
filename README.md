@@ -1,12 +1,30 @@
 # Wildfire Prediction
 Canada Wildfire Prediction Using Deep Learning.  
 The objective is to predict the future fire occurrences for the next year given various inputs from the past year and current year.    
-The problem of wildfire prediction is defined as semantic segmentation problem here.  
+The problem of wildfire prediction is defined as semantic segmentation problem here meaning each pixel is assigned a probability between 0 and 1 of being the class fire.  
 The type of input data has an impact on the temporal extent chosen as input to the model.  
 For instance, vegetation data **prior** to the period to predict is used while weather data and any data that is not affected by fires is taken from the period to predict.  
-As an example, to predict the period 2023, we use vegetation data from 2022 and weather data from 2023.
+As an example, to predict the period 2023, we use vegetation data from 2022 and weather data from 2023.  
+The objective of this project is to demonstrate the potential of deep learning in predicting wildfires across Canada.   
+The model developed here serves as a proof of concept and is not yet fully optimized, its goal is to offer valuable insights into how advanced machine learning techniques can be applied to wildfire prediction.  
 
-# Results
+# Results  
+- Below are some preliminary results on the first version of the model.  
+- Using 10 Quantilese to map the predicted hazard map
+- Resolution : 250m/pixel (for both training & predicting)
+- Training periods : 2010-2021 (inclusively)  
+- <a href="https://www.comet.com/alexandrebrown/wildfire/167f313d4c8c4c95a32d56b4fb3b3419" 
+      style="text-decoration: none; color: #0073e6;">
+    View the model training run on CometML
+  </a>  
+- <a href="https://drive.google.com/file/d/1wdIgKBH1kKouCVM-wWN-fWbXRAJc4-G_/view?usp=sharing"
+    style="text-decoration: none; color: #0073e6;">
+    Download 2023 Prediction Map
+  </a>
+- <a href="https://drive.google.com/file/d/1u6HufI5ZngeTXSngWTirmtnK-9bncLuE/view?usp=sharing"
+    style="text-decoration: none; color: #0073e6;">
+    Download Model Weights
+  </a>
 <table style="width:100%; border-collapse: collapse; text-align: center;">
   <thead>
     <tr>
@@ -21,16 +39,12 @@ As an example, to predict the period 2023, we use vegetation data from 2022 and 
   <tbody>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="imgs/pred_2023_unet_v1.png" alt="2023 Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/pred_2023_unet_v1.png" alt="2023 Predicted Fire Hazard Map" height="250px" style="margin-top: 10px;"/>
         <div style="margin-top: 10px; font-size: 14px;">
-          <a href="https://www.comet.com/alexandrebrown/wildfire/167f313d4c8c4c95a32d56b4fb3b3419" 
-             style="text-decoration: none; color: #0073e6;">
-            View the full run on CometML
-          </a>
         </div>
       </td>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="imgs/2023_target_after_qa.png" alt="2023 Ground Truth" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/2023_target_after_qa.png" alt="2023 Ground Truth" height="250px" style="margin-top: 10px;"/>
       </td>
     </tr>
   </tbody>
@@ -49,26 +63,26 @@ As an example, to predict the period 2023, we use vegetation data from 2022 and 
   <tbody>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="imgs/kamloops_2_pred_2023_unet_v1.png" alt="Kamloops 2 Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kamloops_2_pred_2023_unet_v1.png" alt="Kamloops 2 Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
       </td>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="imgs/kamloops_2_satellite.png" alt="Kamloops 2 Satellite Image" height="300px" style="margin-top: 10px;"/>
-      </td>
-    </tr>
-    <tr>
-      <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="imgs/kamloops_pred_2023_unet_v1.png" alt="Kamloops Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
-      </td>
-      <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="imgs/kamloops_satellite.png" alt="Kamloops Satellite Image" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kamloops_2_satellite.png" alt="Kamloops 2 Satellite Image" height="300px" style="margin-top: 10px;"/>
       </td>
     </tr>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="imgs/vancouver_pred_2023_unet_v1.png" alt="Vancouver Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kamloops_pred_2023_unet_v1.png" alt="Kamloops Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
       </td>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="imgs/vancouver_satellite.png" alt="Vancouver Satellite Image" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kamloops_satellite.png" alt="Kamloops Satellite Image" height="300px" style="margin-top: 10px;"/>
+      </td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="doc/imgs/preds/vancouver_pred_2023_unet_v1.png" alt="Vancouver Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+      </td>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="doc/imgs/preds/vancouver_satellite.png" alt="Vancouver Satellite Image" height="300px" style="margin-top: 10px;"/>
       </td>
     </tr>
   </tbody>
@@ -81,48 +95,85 @@ As an example, to predict the period 2023, we use vegetation data from 2022 and 
   - Source : [Canada Boundary Shapefile](https://open.canada.ca/data/en/dataset/a883eb14-0c0e-45c4-b8c4-b54c4a819edb)  
 
 ## Input Data  
-The data listed below is the input data used as input for the model (we stack each input data).  
-For data that is not affected by fires (eg: weather data), we use the data from the current year and for data that is affected by fires (eg: vegetation data), we use the data from a previous year.  
-For instance, if we want to predict the wildfires for the year 2005, then we will use the weather data from 2005 and the vegetation data from 2004.
+The following data were used as inputs for the model.   
+Each input data is stacked to create the final input data for the model.   
+For data not directly affected by fires (e.g., weather data), we use data from the current year, while for data affected by fires (e.g., vegetation data), we use data from the previous year.   
+For example, to predict wildfires in 2005, we use weather data from 2005 and vegetation data from 2004.
+
 ### Dynamic Input Data  
-Dynamic input data is data that changes over time. This data is updated on a daily/weekly/bi-weekly/monthly/yearly basis (depending on which data input).
-#### Vegetation
-- [MODIS/Terra Vegetation Indices 16-Day L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod13q1v061/)
-  - Normalized Difference Vegetation Index (NDVI)
-  - Enhanced Vegetation Index (EVI)
-- [MODIS/Terra Vegetation Continuous Fields Yearly L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod44bv061/)
-  - Percent Tree Cover  
-  - Percent Non-Tree Cover
-  - Percent Non Vegetated 
-- [MODIS/Terra Leaf Area Index/FPAR 8-Day L4 Global 500 m SIN Grid](https://lpdaac.usgs.gov/products/mod15a2hv061/)
-  - Leaf Area Index (LAI) 
-#### Weather
-- [ERA5 Reanalysis 100m U component of wind](https://codes.ecmwf.int/grib/param-db/228246)
-  - 100m U component of wind 
-- [ERA5 Reanalysis 100m V component of wind](https://codes.ecmwf.int/grib/param-db/132)
-  - 100m V component of wind
-- [ERA5 Reanalysis 2m Temperature](https://codes.ecmwf.int/grib/param-db/167)
-  - 2m Temperature
-- [ERA5 Reanalysis Potential evaporation](https://codes.ecmwf.int/grib/param-db/228251)
-  - Potential evaporation
-- [ERA5 Reanalysis Surface net solar radiation](https://codes.ecmwf.int/grib/param-db/176)
-  - Surface net solar radiation
-- [ERA5 Reanalysis Surface runoff](https://codes.ecmwf.int/grib/param-db/8)
-  - Surface runoff
-- [ERA5 Reanalysis Total precipitation](https://codes.ecmwf.int/grib/param-db/228)
-  - Total precipitation
-#### Thematic
-- [MODIS/Terra Thermal Anomalies/Fire 8-Day L3 Global 1 km SIN Grid](https://lpdaac.usgs.gov/products/mod14a2v061/)
-  - Fire Mask  
+Dynamic input data changes over time and is updated on a daily, weekly, bi-weekly, monthly, or yearly basis, depending on the dataset.
+
+#### Vegetation Data
+- **Normalized Difference Vegetation Index (NDVI)**  
+  <img src="doc/imgs/data_preview/input_data_2010_ndvi.png" alt="NDVI" style="max-height: 200px;">  
+  [MODIS/Terra Vegetation Indices 16-Day L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod13q1v061/)
+
+- **Enhanced Vegetation Index (EVI)**  
+  <img src="doc/imgs/data_preview/input_data_2010_evi.png" alt="EVI" style="max-height: 200px;">  
+  [MODIS/Terra Vegetation Indices 16-Day L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod13q1v061/)
+
+- **Percent Tree Cover**  
+  <img src="doc/imgs/data_preview/input_data_2010_pct_tree.png" alt="Percent Tree Cover" style="max-height: 200px;">  
+  [MODIS/Terra Vegetation Continuous Fields Yearly L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod44bv061/)
+
+- **Percent Non-Tree Vegetation**  
+  <img src="doc/imgs/data_preview/input_data_2010_pct_non_tree_veg.png" alt="Percent Non-Tree Vegetation" style="max-height: 200px;">  
+  [MODIS/Terra Vegetation Continuous Fields Yearly L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod44bv061/)
+
+- **Percent Non-Vegetated**  
+  <img src="doc/imgs/data_preview/input_data_2010_pct_non_veg.png" alt="Percent Non-Vegetated" style="max-height: 200px;">  
+  [MODIS/Terra Vegetation Continuous Fields Yearly L3 Global 250 m SIN Grid](https://lpdaac.usgs.gov/products/mod44bv061/)
+
+- **Leaf Area Index (LAI)**  
+  <img src="doc/imgs/data_preview/input_data_2010_lai.png" alt="LAI" style="max-height: 200px;">  
+  [MODIS/Terra Leaf Area Index/FPAR 8-Day L4 Global 500 m SIN Grid](https://lpdaac.usgs.gov/products/mod15a2hv061/)
+
+#### Weather Data
+- **100m U Component of Wind**  
+  <img src="doc/imgs/data_preview/input_data_2010_u_wind.png" alt="U Wind Component" style="max-height: 200px;">  
+  [ERA5 Reanalysis 100m U component of wind](https://codes.ecmwf.int/grib/param-db/228246)
+
+- **100m V Component of Wind**  
+  <img src="doc/imgs/data_preview/input_data_2010_v_wind.png" alt="V Wind Component" style="max-height: 200px;">  
+  [ERA5 Reanalysis 100m V component of wind](https://codes.ecmwf.int/grib/param-db/132)
+
+- **2m Temperature**  
+  <img src="doc/imgs/data_preview/input_data_2010_2m_temp.png" alt="2m Temperature" style="max-height: 200px;">  
+  [ERA5 Reanalysis 2m Temperature](https://codes.ecmwf.int/grib/param-db/167)
+
+- **Potential Evaporation (PE)**  
+  <img src="doc/imgs/data_preview/input_data_2010_pe.png" alt="Potential Evaporation" style="max-height: 200px;">  
+  [ERA5 Reanalysis Potential evaporation](https://codes.ecmwf.int/grib/param-db/228251)
+
+- **Surface Net Solar Radiation**  
+  <img src="doc/imgs/data_preview/input_data_2010_solar_radiation.png" alt="Solar Radiation" style="max-height: 200px;">  
+  [ERA5 Reanalysis Surface net solar radiation](https://codes.ecmwf.int/grib/param-db/176)
+
+- **Surface Runoff**  
+  <img src="doc/imgs/data_preview/input_data_2010_surface_runoff.png" alt="Surface Runoff" style="max-height: 200px;">  
+  [ERA5 Reanalysis Surface runoff](https://codes.ecmwf.int/grib/param-db/8)
+
+- **Total Precipitation (TP)**  
+  <img src="doc/imgs/data_preview/input_data_2010_tp.png" alt="Total Precipitation" style="max-height: 200px;">  
+  [ERA5 Reanalysis Total precipitation](https://codes.ecmwf.int/grib/param-db/228)
+
+#### Fire and Thermal Data
+- **Fire Mask**  
+  <img src="doc/imgs/data_preview/input_data_2010_fire_mask.png" alt="Fire Mask" style="max-height: 200px;">  
+  [MODIS/Terra Thermal Anomalies/Fire 8-Day L3 Global 1 km SIN Grid](https://lpdaac.usgs.gov/products/mod14a2v061/)
 
 ### Static Input Data
-Static input data is data that does not change over time or for which we only have 1 time slice.
-#### Elevation 
-- [NASA Shuttle Radar Topography Mission Global 3 arc second](https://lpdaac.usgs.gov/products/srtmgl3v003/)
-  - Elevation
-#### Water Bodies
-- [Atlas of Canada National Scale Data 1:1,000,000 - Waterbodies](https://open.canada.ca/data/en/dataset/e9931fc7-034c-52ad-91c5-6c64d4ba0065)
-  - Permanent Water Bodies
+Static input data does not change over time or is available as a single time slice.
+
+#### Elevation Data
+- **Elevation (DEM)**  
+  <img src="doc/imgs/data_preview/input_data_2010_dem.png" alt="Elevation" style="max-height: 200px;">  
+  [NASA Shuttle Radar Topography Mission Global 3 arc second](https://lpdaac.usgs.gov/products/srtmgl3v003/)
+
+#### Water Bodies Data
+- **Permanent Water Bodies**  
+  <img src="doc/imgs/data_preview/input_data_2010_waterbodies.png" alt="Water Bodies" style="max-height: 200px;">  
+  [Atlas of Canada National Scale Data 1:1,000,000 - Waterbodies](https://open.canada.ca/data/en/dataset/e9931fc7-034c-52ad-91c5-6c64d4ba0065)
 
 ### Data Aggregation  
 - All the data that is not already yearly based is aggregated to have a yearly temporal granularity.  
@@ -154,7 +205,7 @@ Static input data is data that does not change over time or for which we only ha
 ## Pipeline Steps
 ### Download Data
 Here is an overview of how the data is download for each data source and the various steps involved (not including resume logic and low level details) :  
-<img src="doc/images/download_data_overview.png" height="600px"/>
+<img src="doc/imgs/download_data_overview.png" height="600px"/>
   
 The first step of the pipeline is to download the data that will be used for training the model.  
 To do so, one only needs to execute one script, **make sure you are at the root of this repository in your terminal**.  
@@ -201,7 +252,7 @@ Once the raw data has been downloaded, the data needs to be processed because so
 The goal of this step is to take all the data that was downloaded and produce as output tiles of the desired resolution and aggregated yearly.   
 Here is an overview of the various steps (at a high level) :   
 
-<img src="doc/images/generate_dataset_overview.png" height="600px"/>  
+<img src="doc/imgs/generate_dataset_overview.png" height="600px"/>  
 
 Note that this step outputs big tiles and these tiles are usually larger than the tiles that the model will take as input. This was done to ensure that we split our train/val data in a way that avoids leakage. Smaller tiles (eg: 128x128) will be created during training based on the big tiles.  
 Each big tile is of dimension C x H x W where = C the number of different sources of data (eg: NDVI, EVI, LAI, ...), H = 512 and W = 512.  
@@ -250,6 +301,23 @@ Note 2 : If you do not wish to keep the temp data to resume the dataset generati
     ```
   
 Note : The script will generate a json file called `data_split_info.json` under the output directory of the data split. This file is used by the training script to load the data so take note of its location.
+
+#### Data Quality 
+Currently, the default config is setup to have the following data quality checks :  
+- `min_percent_pixels_with_valid_data: 0.50`  
+    - This will delete tiles from the training/validation/test set that do not contain at least 50% of its pixel as "valid pixel".
+    - This was done to ensure the model does not fit noise (eg: tiles consisting of only noise or mainly noise).
+    - This was also applied to validation and test set to ensure we compute metrics based on valid data only.
+- `input_data_min_fraction_of_bands_with_valid_data: 0.5`
+    - This will treat any pixel that does not have at least 50% of its band with valid values as an invalid pixel.
+    - Valid values means it is not nodata values.
+- `max_no_fire_proportion: 0.0`
+    - This will delete from the training set (only), any tiles whos target consist of only 0s.  
+    - This helps combat the highly imbalanced nature of the data for wildfires.
+    - The proportion = 0.0 means we do not allow any tile with only no fire pixels, 0.1 would mean we allow at most 10% of tiles with only 0s as target.
+- `min_nb_pixels_with_fire_per_tile: 256`
+    - This will delete tiles from the training set (only), that do not have at least 256 pixels with a target = 1.
+    - This helps combat the highly imbalanced nature of the data for wildfires. 
 
 ### Training
 1. Add the repo source code to the python path (make sure you are at the root of the repository) :  
@@ -305,15 +373,18 @@ https://www.comet.com/site/
     python predict.py
     ```
   
-Note : The script outputs 1 raster file which corresponds to the prediction map where each pixel has a probability of future wildfire occurrence assigned to it.  
+Note : The script outputs 1 raster file which corresponds to the prediction map where each pixel has a probability of future wildfire occurrence assigned to it. You might want to add 0 as nodata value in QGIS when viewing the predicted map.  
 
 # Deep Learning Model
-- The repository features a custom implementation of a [U-Net Convolutional Neural Network](https://arxiv.org/abs/1505.04597).
+- The repository features a custom implementation of a [U-Net Convolutional Neural Network](https://arxiv.org/abs/1505.04597).  
+- Below is a graph of the UNet architecture coded in this repository which slightly deviates from the paper to produce an output that has the same size as the input image :  
+<img src="doc/imgs/models/unet.png" height="300px"/> 
 
 # Contributing  
 1. Follow the [prerequisites](#prerequisites) steps.
 1. [Download & Install Trufflehog Binary](https://github.com/trufflesecurity/trufflehog/releases/tag/v3.81.8)
 1. Install pre-commit hooks  
-```bash
-pre-commit install --allow-missing-config
-```  
+    ```bash
+    pre-commit install --allow-missing-config
+    ```  
+1. Update `.vscode/settings.json` `mypy.dmypyExecutable` to point to the binary based on your conda env location (currently it assumes you use micromamba and have an environment named `wildfire` under `/home/user/micromamba/envs/wildfire/`)
