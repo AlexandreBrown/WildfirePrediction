@@ -53,3 +53,15 @@ class Logger(ABC):
 
     def format_metrics(self, metrics: dict) -> dict:
         return {k: f"{v:.4}" for k, v in metrics.items()}
+
+    @abstractmethod
+    def log_code(self, folder: str):
+        pass
+
+    @abstractmethod
+    def log_model(self, model_name, model_file_path):
+        pass
+
+    @abstractmethod
+    def log_asset(self, asset_path: str):
+        pass

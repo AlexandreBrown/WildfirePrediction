@@ -90,6 +90,8 @@ def main(cfg: DictConfig):
 
     config_logger = logger_factory.create("")
     config_logger.log_parameters(OmegaConf.to_container(cfg))
+    config_logger.log_code(folder="src")
+    config_logger.log_asset(str(Path(cfg["data"]["split_info_file_path"])))
 
     trainer = SemanticSegmentationTrainer(
         model=model,
@@ -115,6 +117,12 @@ def main(cfg: DictConfig):
     except InterruptedExperiment as exc:
         logger.info("status", str(exc))
         logger.info("Experiment interrupted!")
+
+    if trainer.best_model_path is not None:
+        logger.info(f"Logging best model: {trainer.best_model_path}")
+        config_logger.log_model(
+            model_name="unet", model_file_path=str(trainer.best_model_path)
+        )
 
 
 if __name__ == "__main__":

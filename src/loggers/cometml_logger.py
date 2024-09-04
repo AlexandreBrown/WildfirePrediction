@@ -31,3 +31,12 @@ class CometmlLogger(Logger):
 
     def log_parameters(self, parameters: dict):
         self.experiment.log_parameters(parameters)
+
+    def log_code(self, folder: str):
+        self.experiment.log_code(folder=folder)
+
+    def log_model(self, model_name, model_file_path):
+        self.experiment.log_model(model_name, model_file_path)
+
+    def log_asset(self, asset_path: str):
+        self.experiment.log_asset(asset_path)

@@ -27,3 +27,12 @@ class LoguruLogger(Logger):
 
     def log_parameters(self, parameters: dict):
         pass
+
+    def log_code(self, folder: str):
+        pass
+
+    def log_model(self, model_name, model_file_path):
+        pass
+
+    def log_asset(self, asset_path: str):
+        pass

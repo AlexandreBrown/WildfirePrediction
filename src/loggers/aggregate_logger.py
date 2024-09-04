@@ -47,3 +47,15 @@ class AggregateLogger(Logger):
     def log_parameters(self, parameters: dict):
         for logger in self.loggers:
             logger.log_parameters(parameters)
+
+    def log_code(self, folder: str):
+        for logger in self.loggers:
+            logger.log_code(folder)
+
+    def log_model(self, model_name, model_file_path):
+        for logger in self.loggers:
+            logger.log_model(model_name, model_file_path)
+
+    def log_asset(self, asset_path: str):
+        for logger in self.loggers:
+            logger.log_asset(asset_path)
