@@ -47,7 +47,7 @@ class WildfireDataModule:
         train_stats: Optional[dict] = None,
         data_loading_num_workers: int = 4,
         device: Optional[torch.device] = None,
-        data_augs: Optional[dict] = None,
+        data_augs: Optional[list] = None,
     ):
         gdal.UseExceptions()
         self.input_data_indexes_to_remove = input_data_indexes_to_remove
