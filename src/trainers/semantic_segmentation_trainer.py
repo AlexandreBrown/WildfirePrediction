@@ -83,7 +83,6 @@ class SemanticSegmentationTrainer:
                 epochs, train_epoch_metrics, val_epoch_metrics
             )
             self.update_best_model(val_epoch_metrics)
-            self.lr_scheduler.step()
 
         end_time = time.time()
 
@@ -155,6 +154,7 @@ class SemanticSegmentationTrainer:
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+            self.lr_scheduler.step()
 
             for train_metric in self.train_metrics:
                 metric_value = train_metric(y_hat, y)

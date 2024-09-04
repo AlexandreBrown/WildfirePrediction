@@ -6,6 +6,75 @@ The type of input data has an impact on the temporal extent chosen as input to t
 For instance, vegetation data **prior** to the period to predict is used while weather data and any data that is not affected by fires is taken from the period to predict.  
 As an example, to predict the period 2023, we use vegetation data from 2022 and weather data from 2023.
 
+# Results
+<table style="width:100%; border-collapse: collapse; text-align: center;">
+  <thead>
+    <tr>
+      <th style="border: 1px solid #ddd; padding: 15px; background-color: #4CAF50; color: white; font-size: 18px; font-weight: bold;">
+        UNet Model v1 2023 Predicted Fire Hazard Map (Test Set)
+      </th>
+      <th style="border: 1px solid #ddd; padding: 15px; background-color: #4CAF50; color: white; font-size: 18px; font-weight: bold;">
+        2023 Ground Truth (After Q/A)
+      </th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="imgs/pred_2023_unet_v1.png" alt="2023 Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        <div style="margin-top: 10px; font-size: 14px;">
+          <a href="https://www.comet.com/alexandrebrown/wildfire/167f313d4c8c4c95a32d56b4fb3b3419" 
+             style="text-decoration: none; color: #0073e6;">
+            View the full run on CometML
+          </a>
+        </div>
+      </td>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="imgs/2023_target_after_qa.png" alt="2023 Ground Truth" height="300px" style="margin-top: 10px;"/>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<table style="width:100%; border-collapse: collapse; text-align: center;">
+  <thead>
+    <tr>
+      <th style="border: 1px solid #ddd; padding: 15px; background-color: #4CAF50; color: white; font-size: 18px; font-weight: bold;">
+        Predicted Fire Hazard Map
+      </th>
+      <th style="border: 1px solid #ddd; padding: 15px; background-color: #4CAF50; color: white; font-size: 18px; font-weight: bold;">
+        Satellite Image (Ground Truth)
+      </th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="imgs/kamloops_2_pred_2023_unet_v1.png" alt="Kamloops 2 Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+      </td>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="imgs/kamloops_2_satellite.png" alt="Kamloops 2 Satellite Image" height="300px" style="margin-top: 10px;"/>
+      </td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="imgs/kamloops_pred_2023_unet_v1.png" alt="Kamloops Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+      </td>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="imgs/kamloops_satellite.png" alt="Kamloops Satellite Image" height="300px" style="margin-top: 10px;"/>
+      </td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="imgs/vancouver_pred_2023_unet_v1.png" alt="Vancouver Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+      </td>
+      <td style="border: 1px solid #ddd; padding: 10px;">
+        <img src="imgs/vancouver_satellite.png" alt="Vancouver Satellite Image" height="300px" style="margin-top: 10px;"/>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+
 # Data  
 ## Boundaries
 - The boundary of Canada is used to train the model and to generate predictions 

@@ -67,7 +67,8 @@ def main(cfg: DictConfig):
     test_dl = data_module.test_dataloader()
 
     model = UnetModel(
-        in_channels=cfg["model"]["number_of_input_channels"],
+        in_channels=cfg["model"]["number_of_input_channels"]
+        - len(cfg["data"]["input_data_indexes_to_remove"]),
         nb_classes=cfg["model"]["number_of_classes"],
         activation_fn_name=cfg["model"]["activation_fn_name"],
         num_encoder_decoder_blocks=cfg["model"]["num_encoder_decoder_blocks"],

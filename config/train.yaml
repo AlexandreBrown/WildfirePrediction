@@ -11,17 +11,19 @@ model:
   optimizer:
     name: "adam"
     params:
-      lr : 0.001
+      lr : 0.0001
       weight_decay: 0.0001
   lr_scheduler:
-    name: "exponential_lr"
+    name: "one_cycle_lr"
     params:
-      gamma: 0.95
+      max_lr: 0.0001
+      epochs: 25
+      steps_per_epoch: 202
 output_path: "data/trainings/"
 data:
-  split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-09-03_12-39-00/data_split_info.json'
+  split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-09-03_17-03-47/data_split_info.json'
   input_data_no_data_value: -32768.0
-  input_data_new_no_data_value: -10.0
+  input_data_new_no_data_value: 0.0
   target_no_data_value: 127
   data_loading_num_workers: 6
   input_data_indexes_to_remove: []
@@ -32,22 +34,22 @@ training:
   loss_name: "ce_dice_loss"
   optimization_metric_name: "ce_dice_loss"
   minimize_optimization_metric: true
-  data_augs:
-    - name: "RandomVerticalFlip"
-      params:
-        p: 0.5
-    - name: "RandomHorizontalFlip"
-      params:
-        p: 0.5
+  data_augs: []
+    # - name: "RandomVerticalFlip"
+    #   params:
+    #     p: 0.5
+    # - name: "RandomHorizontalFlip"
+    #   params:
+    #     p: 0.5
     # - name: "RandomRotate"
     #   params:
     #     p: 0.5
-    #     fill: -10.0
+    #     fill: 0.0
 metrics:
   - name: "ce_dice_loss"
     params:
-      ce_weight: 0.1
-      dice_weight: 0.9
+      ce_weight: 1.0
+      dice_weight: 1.0
       ce_params: {}
       dice_params:
         smooth: 1e-5

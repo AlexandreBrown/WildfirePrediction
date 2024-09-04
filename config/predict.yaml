@@ -2,18 +2,18 @@ debug: false
 run:
   name: "predict_unet_test_2023_${now:%Y-%m-%d_%H-%M-%S}"
 model:
-  trained_model_path: "data/trainings/train_unet_2024-08-28_20-57-48/models/best_model_epoch_50_step_41550.pth"
+  trained_model_path: "data/trainings/train_unet_2024-09-03_17-16-33/models/best_model_epoch_24_step_4848.pth"
   number_of_input_channels: 16
   number_of_classes: 1
   activation_fn_name: "relu"
   num_encoder_decoder_blocks: 4
   use_batchnorm: true
-output_path: "data/predictions/"
+output_path: "data/predictions_outputs/"
 data:
-  split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-09-03_12-39-00/data_split_info.json'
+  split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-09-03_17-03-47/data_split_info.json'
   input_data_folder_path: 'data/predict/test/2023/'
   input_data_no_data_value: -32768.0
-  input_data_new_no_data_value: -10.0
+  input_data_new_no_data_value: 0.0
   data_loading_num_workers: 4
   input_data_indexes_to_remove: []
 predict:

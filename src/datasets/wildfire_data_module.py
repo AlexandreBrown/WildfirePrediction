@@ -33,6 +33,7 @@ class WildfireDataModule:
         min_percent_pixels_with_valid_data: float = 0.25,
         input_data_min_fraction_of_bands_with_valid_data: float = 0.5,
         max_no_fire_proportion: float = 0.1,
+        min_nb_pixels_with_fire_per_tile: int = 0,
         input_data_periods_folders_paths: Optional[list] = None,
         target_periods_folders_paths: Optional[list] = None,
         train_periods: Optional[list] = None,
@@ -62,6 +63,7 @@ class WildfireDataModule:
             input_data_min_fraction_of_bands_with_valid_data
         )
         self.max_no_fire_proportion = max_no_fire_proportion
+        self.min_nb_pixels_with_fire_per_tile = min_nb_pixels_with_fire_per_tile
         self.train_stats = train_stats
         self.generator = torch.Generator().manual_seed(seed)
         self.output_folder_path = output_folder_path
@@ -146,7 +148,10 @@ class WildfireDataModule:
                 [self.val_folder_path / self.target_folder_name]
             )
             val_input_files, val_target_files = self.perform_quality_check(
-                val_input_files, val_target_files, remove_no_fire=False
+                val_input_files,
+                val_target_files,
+                remove_no_fire=False,
+                remove_low_fire=False,
             )
             logger.info(f"Validation input files: {len(val_input_files)}")
             logger.info(f"Validation target files: {len(val_target_files)}")
@@ -162,7 +167,10 @@ class WildfireDataModule:
             [self.train_folder_path / self.target_folder_name]
         )
         train_input_files, train_target_files = self.perform_quality_check(
-            train_input_files, train_target_files, remove_no_fire=True
+            train_input_files,
+            train_target_files,
+            remove_no_fire=True,
+            remove_low_fire=True,
         )
         logger.info(f"Train input files: {len(train_input_files)}")
         logger.info(f"Train target files: {len(train_target_files)}")
@@ -183,7 +191,10 @@ class WildfireDataModule:
             [self.test_folder_path / self.target_folder_name]
         )
         test_input_files, test_target_files = self.perform_quality_check(
-            test_input_files, test_target_files, remove_no_fire=False
+            test_input_files,
+            test_target_files,
+            remove_no_fire=False,
+            remove_low_fire=False,
         )
         logger.info(f"Test input files: {len(test_input_files)}")
         logger.info(f"Test target files: {len(test_target_files)}")
@@ -231,7 +242,11 @@ class WildfireDataModule:
         )
 
     def perform_quality_check(
-        self, input_data_files: list, target_files: list, remove_no_fire: bool = False
+        self,
+        input_data_files: list,
+        target_files: list,
+        remove_no_fire: bool = False,
+        remove_low_fire: bool = False,
     ) -> tuple:
         logger.info("Performing quality check...")
 
@@ -253,6 +268,8 @@ class WildfireDataModule:
             f"Removed {nb_files_removed_due_to_bad_quality} files that did not pass the quality check!"
         )
 
+        nb_files_removed_due_to_no_fire = 0
+
         if remove_no_fire:
             nb_files_left = len(results) - nb_files_removed_due_to_bad_quality
 
@@ -264,7 +281,6 @@ class WildfireDataModule:
 
             logger.info(f"Max number of no fire files: {max_nb_files_no_fire}")
             nb_no_fire_files = 0
-            nb_files_removed_due_to_no_fire = 0
             for result in results:
                 if result["all_no_fire"] and result["input_data_path"].exists():
                     if nb_no_fire_files > max_nb_files_no_fire:
@@ -275,7 +291,35 @@ class WildfireDataModule:
                     nb_no_fire_files += 1
 
             logger.info(
-                f"Removed {nb_files_removed_due_to_no_fire} files that contain only no fire pixels!"
+                f"Removed {nb_files_removed_due_to_no_fire} files that had no fire pixels!"
+            )
+
+        if remove_low_fire:
+            nb_files_left = (
+                len(results)
+                - nb_files_removed_due_to_bad_quality
+                - nb_files_removed_due_to_no_fire
+            )
+
+            nb_low_fire_files = sum(
+                1
+                for result in results
+                if result["fire_pixels_count"] < self.min_nb_pixels_with_fire_per_tile
+            )
+
+            logger.info(f"Number of low fire files: {nb_low_fire_files}")
+            nb_files_removed_due_to_low_fire = 0
+            for result in results:
+                if (
+                    result["fire_pixels_count"] < self.min_nb_pixels_with_fire_per_tile
+                    and result["input_data_path"].exists()
+                ):
+                    nb_files_removed_due_to_low_fire += 1
+                    result["input_data_path"].unlink()
+                    result["target_path"].unlink()
+
+            logger.info(
+                f"Removed {nb_files_removed_due_to_low_fire} files that had low number of fire pixels!"
             )
 
         input_data_files_kept = set(
@@ -343,11 +387,14 @@ class WildfireDataModule:
 
         all_no_fire = np.all(target_data == 0)
 
+        fire_pixels_count = np.count_nonzero(target_data)
+
         return {
             "input_data_path": input_data_file,
             "target_path": target_file,
             "passed_quality_check": passed_quality_check,
             "all_no_fire": all_no_fire,
+            "fire_pixels_count": fire_pixels_count,
         }
 
     def preprocess_tiles(
