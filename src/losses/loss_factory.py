@@ -1,5 +1,5 @@
 import torch.nn as nn
-from segmentation_models_pytorch.losses import DiceLoss
+from losses.dice import DiceLoss
 from losses.ce_dice import BinaryCeSoftDiceLoss
 
 

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from segmentation_models_pytorch.losses import DiceLoss
+from losses.dice import DiceLoss
 
 
 class BinaryCeSoftDiceLoss(nn.Module):
