@@ -13,15 +13,15 @@ The model developed here serves as a proof of concept and is not yet fully optim
 - Using 10 Quantilese to map the predicted hazard map
 - Resolution : 250m/pixel (for both training & predicting)
 - Training periods : 2010-2021 (inclusively)  
-- <a href="https://www.comet.com/alexandrebrown/wildfire/167f313d4c8c4c95a32d56b4fb3b3419" 
+- <a href="https://www.comet.com/alexandrebrown/wildfire/26b4b0671ac9433ea6b5f7dac1592377" 
       style="text-decoration: none; color: #0073e6;">
     View the model training run on CometML
   </a>  
-- <a href="https://drive.google.com/file/d/1wdIgKBH1kKouCVM-wWN-fWbXRAJc4-G_/view?usp=sharing"
+- <a href="https://drive.google.com/file/d/1kvvDeFAmqPzSd7s-v1nILSmFfLp0vtM4/view?usp=sharing"
     style="text-decoration: none; color: #0073e6;">
     Download 2023 Prediction Map
   </a>
-- <a href="https://drive.google.com/file/d/1u6HufI5ZngeTXSngWTirmtnK-9bncLuE/view?usp=sharing"
+- <a href="https://www.comet.com/api/asset/download?assetId=831b5a911cba48c4beee9f3559583d6f&experimentKey=26b4b0671ac9433ea6b5f7dac1592377"
     style="text-decoration: none; color: #0073e6;">
     Download Model Weights
   </a>
@@ -29,10 +29,10 @@ The model developed here serves as a proof of concept and is not yet fully optim
   <thead>
     <tr>
       <th style="border: 1px solid #ddd; padding: 15px; background-color: #4CAF50; color: white; font-size: 18px; font-weight: bold;">
-        UNet Model v1 2023 Predicted Fire Hazard Map (Test Set)
+        UNet Model (latest model) 2023 Predicted Fire Hazard Map (Test Set)
       </th>
       <th style="border: 1px solid #ddd; padding: 15px; background-color: #4CAF50; color: white; font-size: 18px; font-weight: bold;">
-        2023 Ground Truth (After Q/A)
+        2023 Ground Truth (After QC)
       </th>
     </tr>
   </thead>
@@ -56,33 +56,57 @@ The model developed here serves as a proof of concept and is not yet fully optim
         Predicted Fire Hazard Map
       </th>
       <th style="border: 1px solid #ddd; padding: 15px; background-color: #4CAF50; color: white; font-size: 18px; font-weight: bold;">
-        Satellite Image (Ground Truth)
+        Satellite Image
       </th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="doc/imgs/preds/kamloops_2_pred_2023_unet_v1.png" alt="Kamloops 2 Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kamloops_pred_2023_unet_v1.png" alt="Kamloops Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        </br>
+        <div>
+          Kamloops (city area with expected high probability)
+        </div>
       </td>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="doc/imgs/preds/kamloops_2_satellite.png" alt="Kamloops 2 Satellite Image" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kamloops_satellite.png" alt="Kamloops Satellite Image" height="300px" style="margin-top: 10px;"/>
+        </br>
+        <div>
+          Kamloops
+        </div>
       </td>
     </tr>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="doc/imgs/preds/kamloops_pred_2023_unet_v1.png" alt="Kamloops Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kelowna_pred_2023_unet_v1.png" alt="Kelowna Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        </br>
+        <div>
+          Kelowna (city area with expected high probability)
+        </div>
       </td>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="doc/imgs/preds/kamloops_satellite.png" alt="Kamloops Satellite Image" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kelowna_satellite.png" alt="Kelowna Satellite Image" height="300px" style="margin-top: 10px;"/>
+        </br>
+        <div>
+          Kelowna
+        </div>
       </td>
     </tr>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
         <img src="doc/imgs/preds/vancouver_pred_2023_unet_v1.png" alt="Vancouver Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        </br>
+        <div>
+          Vancouver (city area with expected low probability)
+        </div>
       </td>
       <td style="border: 1px solid #ddd; padding: 10px;">
         <img src="doc/imgs/preds/vancouver_satellite.png" alt="Vancouver Satellite Image" height="300px" style="margin-top: 10px;"/>
+        </br>
+        <div>
+          Vancouver
+        </div>
       </td>
     </tr>
   </tbody>

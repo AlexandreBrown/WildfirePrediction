@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from losses.dice import BinarySoftDiceLoss
+from segmentation_models_pytorch.losses import DiceLoss
 
 
 class BinaryCeSoftDiceLoss(nn.Module):
@@ -11,7 +11,7 @@ class BinaryCeSoftDiceLoss(nn.Module):
         self.ce_weight = ce_weight
         self.dice_weight = dice_weight
         self.ce_loss = nn.BCEWithLogitsLoss(**ce_params)
-        self.dice_loss = BinarySoftDiceLoss(**dice_params)
+        self.dice_loss = DiceLoss(**dice_params)
 
     def forward(self, predictions: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         ce_loss = self.ce_loss(predictions, target)

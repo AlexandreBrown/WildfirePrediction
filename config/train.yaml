@@ -17,7 +17,7 @@ model:
     name: "one_cycle_lr"
     params:
       max_lr: 0.0001
-      epochs: 50
+      epochs: 10
       steps_per_epoch: 202
 output_path: "data/trainings/"
 data:
@@ -28,7 +28,7 @@ data:
   data_loading_num_workers: 6
   input_data_indexes_to_remove: []
 training:
-  max_nb_epochs: 50
+  max_nb_epochs: 10
   train_batch_size: 16
   eval_batch_size: 32
   loss_name: "dice_loss"
@@ -56,8 +56,11 @@ metrics:
         from_logits: true
   - name: "dice_loss"
     params:
-      smooth: 1e-5
+      mode: "binary"
+      classes: [1]
+      log_loss: false
       from_logits: true
+      smooth: 1e-5
   - name: "ce_loss"
     params: {}
   - name: "pr_auc"

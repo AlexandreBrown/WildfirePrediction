@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import asyncio
 from osgeo import gdal
 from osgeo import osr
@@ -51,7 +52,7 @@ class MapPredictor:
                 y_hat = torch.squeeze(y_hat, dim=1)
 
                 if self.use_probabilities:
-                    y_hat = torch.sigmoid(y_hat)
+                    y_hat = F.logsigmoid(y_hat).exp()
 
                 for i, prediction in enumerate(y_hat):
                     geotransform = geotransforms[i]
