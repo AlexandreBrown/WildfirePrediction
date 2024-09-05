@@ -5,11 +5,20 @@ from losses.dice import DiceLoss
 
 class BinaryCeSoftDiceLoss(nn.Module):
     def __init__(
-        self, ce_weight: float, dice_weight: float, ce_params: dict, dice_params: dict
+        self,
+        device,
+        ce_weight: float,
+        dice_weight: float,
+        ce_params: dict,
+        dice_params: dict,
     ):
         super().__init__()
         self.ce_weight = ce_weight
         self.dice_weight = dice_weight
+        if "pos_weight" in ce_params:
+            ce_params["pos_weight"] = torch.tensor(list(ce_params["pos_weight"])).to(
+                device
+            )
         self.ce_loss = nn.BCEWithLogitsLoss(**ce_params)
         self.dice_loss = DiceLoss(**dice_params)
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from loggers.factory import LoggerFactory
 from metrics.metric_factory import create_metrics
 from losses.loss_factory import create_loss
+from omegaconf import OmegaConf
 from losses.nan_aware_loss import NanAwareLoss
 
 
@@ -42,13 +43,21 @@ class SemanticSegmentationTrainer:
         self.best_model_output_folder.mkdir(parents=True, exist_ok=True)
         self.logger_factory = logger_factory
         self.output_folder = output_folder
+        metrics_config = OmegaConf.to_container(metrics_config)
         loss_config = self.get_loss_config(metrics_config, loss_name)
         self.loss = NanAwareLoss(
-            create_loss(loss_name, **loss_config["params"]), target_no_data_value
+            create_loss(self.device, loss_name, **loss_config["params"]),
+            target_no_data_value,
         )
-        self.train_metrics = create_metrics(metrics_config, target_no_data_value)
-        self.val_metrics = create_metrics(metrics_config, target_no_data_value)
-        self.test_metrics = create_metrics(metrics_config, target_no_data_value)
+        self.train_metrics = create_metrics(
+            self.device, metrics_config, target_no_data_value
+        )
+        self.val_metrics = create_metrics(
+            self.device, metrics_config, target_no_data_value
+        )
+        self.test_metrics = create_metrics(
+            self.device, metrics_config, target_no_data_value
+        )
         self.clear_best_model()
         logger.info("Trainer initialized!")
 
