@@ -45,5 +45,5 @@ training:
   val_split: 0.2
   train_periods:
     start_inclusive: 2010
-    end_inclusive: 2021
+    end_inclusive: 2022
     period_length_in_years: 1

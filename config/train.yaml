@@ -17,18 +17,18 @@ model:
     name: "one_cycle_lr"
     params:
       max_lr: 0.0001
-      epochs: 150
-      steps_per_epoch: 202
+      epochs: 200
+      steps_per_epoch: 219
 output_path: "data/trainings/"
 data:
-  split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-09-03_17-03-47/data_split_info.json'
+  split_info_file_path: 'data/splits/holdout_split_2010_2023_2024-09-05_18-51-31/data_split_info.json'
   input_data_no_data_value: -32768.0
   input_data_new_no_data_value: 0.0
   target_no_data_value: 127
   data_loading_num_workers: 6
   input_data_indexes_to_remove: []
 training:
-  max_nb_epochs: 150
+  max_nb_epochs: 200
   train_batch_size: 16
   eval_batch_size: 32
   loss_name: "ce_dice_loss"
@@ -49,10 +49,10 @@ training:
 metrics:
   - name: "ce_dice_loss"
     params:
-      ce_weight: 0.25
-      dice_weight: 0.75
+      ce_weight: 0.5
+      dice_weight: 0.5
       ce_params:
-        pos_weight: [99.0]
+        pos_weight: [90.0]
       dice_params:
         log_loss: false
         from_logits: true
@@ -64,7 +64,7 @@ metrics:
       smooth: 1e-5
   - name: "ce_loss"
     params:
-      pos_weight: [99.0]
+      pos_weight: [90.0]
   - name: "pr_auc"
     params: {}
 logging:

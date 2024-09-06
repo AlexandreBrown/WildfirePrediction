@@ -12,16 +12,16 @@ The model developed here serves as a proof of concept and is not yet fully optim
 - Below are some preliminary results on the first version of the model.  
 - Using 10 Quantilese to map the predicted hazard map
 - Resolution : 250m/pixel (for both training & predicting)
-- Training periods : 2010-2021 (inclusively)  
-- <a href="https://www.comet.com/alexandrebrown/wildfire/5d02d63ab21f4abc900bc471d612aaee" 
+- Training periods : 2010-2022 (inclusively)  
+- <a href="https://www.comet.com/alexandrebrown/wildfire/7a153c0ed521439b89a1b5938bca5edc" 
       style="text-decoration: none; color: #0073e6;">
     View the model training run on CometML
   </a>  
-- <a href="https://drive.google.com/file/d/1Gw3FJErxcgdEVmIsYlQV_O7Uxu5OUaX9/view?usp=sharing"
+- <a href="https://drive.google.com/file/d/15UuRywxd_Arvl2K7J1t1xAfFLwXDTYnB/view?usp=sharing"
     style="text-decoration: none; color: #0073e6;">
     Download 2023 Prediction Map
   </a>
-- <a href="https://www.comet.com/api/asset/download?assetId=92ef0945f47c4d09bc0b5c4c1743bacf&experimentKey=5d02d63ab21f4abc900bc471d612aaee"
+- <a href="https://www.comet.com/api/asset/download?assetId=7768c6dc7db545a09d92f3dde8d76b8b&experimentKey=7a153c0ed521439b89a1b5938bca5edc"
     style="text-decoration: none; color: #0073e6;">
     Download Model Weights
   </a>
@@ -39,7 +39,7 @@ The model developed here serves as a proof of concept and is not yet fully optim
   <tbody>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="doc/imgs/preds/pred_2023_unet_v3.png" alt="2023 Predicted Fire Hazard Map" height="250px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/pred_2023_unet_v4.png" alt="2023 Predicted Fire Hazard Map" height="250px" style="margin-top: 10px;"/>
         <div style="margin-top: 10px; font-size: 14px;">
         </div>
       </td>
@@ -63,7 +63,7 @@ The model developed here serves as a proof of concept and is not yet fully optim
   <tbody>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="doc/imgs/preds/kamloops_pred_2023_unet_v3.png" alt="Kamloops Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kamloops_pred_2023_unet_v4.png" alt="Kamloops Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
         </br>
         <div>
           Kamloops (city area with expected high probability)
@@ -79,7 +79,7 @@ The model developed here serves as a proof of concept and is not yet fully optim
     </tr>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="doc/imgs/preds/kelowna_pred_2023_unet_v3.png" alt="Kelowna Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/kelowna_pred_2023_unet_v4.png" alt="Kelowna Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
         </br>
         <div>
           Kelowna (city area with expected high probability)
@@ -95,7 +95,7 @@ The model developed here serves as a proof of concept and is not yet fully optim
     </tr>
     <tr>
       <td style="border: 1px solid #ddd; padding: 10px;">
-        <img src="doc/imgs/preds/vancouver_pred_2023_unet_v3.png" alt="Vancouver Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
+        <img src="doc/imgs/preds/vancouver_pred_2023_unet_v4.png" alt="Vancouver Predicted Fire Hazard Map" height="300px" style="margin-top: 10px;"/>
         </br>
         <div>
           Vancouver (city area with expected low probability)
